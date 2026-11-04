@@ -293,8 +293,14 @@ async def test_local_stop_sentence(hass, setup, freezer):
     assert result.response.speech["plain"]["speech"] == "No alarm is ringing."
 
 
-async def test_test_button_rings_without_lights(hass, setup):
+async def test_test_button_rings_without_lights(hass, setup, monkeypatch):
     """Each alarm has a Test button that rings it now, without lights, and keeps it."""
+    manager = setup["entry"].runtime_data
+
+    async def no_length(item):
+        return None  # skip the executor read so the sound starts within block_till_done
+
+    monkeypatch.setattr(manager, "async_sound_duration", no_length)
     await _tool(hass, alarm_llm.SetAlarmTool(), setup["device"].id, time="07:00", repeat="weekdays", wake_up=True)
     await hass.async_block_till_done()
     button = next(
