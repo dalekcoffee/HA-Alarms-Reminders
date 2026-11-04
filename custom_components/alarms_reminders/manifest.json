@@ -1,0 +1,24 @@
+{
+  "domain": "alarms_reminders",
+  "name": "Alarms & Reminders",
+  "after_dependencies": [
+    "assist_satellite",
+    "conversation",
+    "llm",
+    "media_source"
+  ],
+  "codeowners": [
+    "@dalekcoffee"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "file_upload"
+  ],
+  "documentation": "https://github.com/dalekcoffee/HA-Alarms-Reminders",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/dalekcoffee/HA-Alarms-Reminders/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

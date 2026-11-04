@@ -1,0 +1,83 @@
+set_alarm:
+  fields:
+    time:
+      required: true
+      example: "07:00"
+      selector:
+        time:
+    date:
+      selector:
+        date:
+    repeat:
+      example: weekdays
+      selector:
+        text:
+    label:
+      selector:
+        text:
+    room:
+      example: Bedroom
+      selector:
+        text:
+    wake_up:
+      selector:
+        boolean:
+set_reminder:
+  fields:
+    message:
+      required: true
+      example: Call the vet
+      selector:
+        text:
+    time:
+      required: true
+      selector:
+        time:
+    date:
+      selector:
+        date:
+    repeat:
+      selector:
+        text:
+    room:
+      selector:
+        text:
+skip_next:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: alarms_reminders
+          domain: switch
+          multiple: true
+    date:
+      selector:
+        date:
+delete:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: alarms_reminders
+          domain: switch
+          multiple: true
+list:
+  fields:
+    kind:
+      selector:
+        select:
+          options:
+            - alarm
+            - reminder
+            - all
+stop:
+snooze:
+  fields:
+    minutes:
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
