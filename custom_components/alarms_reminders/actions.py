@@ -391,6 +391,8 @@ async def stop(manager: AlarmManager) -> dict[str, Any]:
     """Stop ringing alarms."""
     count = await manager.async_stop_ringing()
     if not count:
+        if manager.just_stopped:
+            return _ok("Alarm stopped.")
         return _fail("No alarm is ringing.")
     return _ok("Alarm stopped.")
 

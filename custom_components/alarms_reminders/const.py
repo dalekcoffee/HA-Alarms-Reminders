@@ -36,6 +36,7 @@ OPT_LIGHT_RAMP_MINUTES = "light_ramp_minutes"
 OPT_BRIGHTNESS = "brightness"
 OPT_KELVIN = "kelvin"
 OPT_NOTIFY_TARGETS = "notify_targets"
+OPT_NOTIFY_ALARMS = "notify_alarms"
 OPT_DEFAULT_SATELLITE = "default_satellite"
 OPT_SOUNDS = "sounds"  # {file name: display name}
 

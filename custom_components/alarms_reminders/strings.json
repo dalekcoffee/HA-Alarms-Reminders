@@ -37,7 +37,8 @@
           "light_ramp_minutes": "Wake-up light ramp",
           "brightness": "Wake-up brightness",
           "kelvin": "Wake-up light colour",
-          "notify_targets": "Phones for reminders"
+          "notify_targets": "Phones",
+          "notify_alarms": "Send ringing alarms to phones"
         },
         "data_description": {
           "default_satellite": "Used when an alarm is set from a dashboard or the Assist dialog instead of a voice device.",
@@ -45,7 +46,8 @@
           "ramp_minutes": "Wake-up alarms go from the starting volume to the alarm volume over this time. 0 = full volume straight away.",
           "wake_lights": "Leave empty to use the lights in the same room as the voice device.",
           "light_ramp_minutes": "Wake-up lights go from 1% to full brightness over this time. 0 = straight on.",
-          "notify_targets": "Home Assistant app notify actions, e.g. notify.mobile_app_pixel."
+          "notify_targets": "Home Assistant app notify actions, e.g. notify.mobile_app_pixel. Used for reminders and ringing alarms.",
+          "notify_alarms": "Shows a notification with Stop and Snooze buttons on the phones below while an alarm rings."
         }
       },
       "add_sound_file": {

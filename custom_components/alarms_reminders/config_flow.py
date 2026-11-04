@@ -49,6 +49,7 @@ from .const import (
     OPT_DEFAULT_SOUND,
     OPT_KELVIN,
     OPT_LIGHT_RAMP_MINUTES,
+    OPT_NOTIFY_ALARMS,
     OPT_NOTIFY_TARGETS,
     OPT_RAMP_MINUTES,
     OPT_RING_MINUTES,
@@ -165,6 +166,7 @@ class AlarmsRemindersOptionsFlow(OptionsFlow):
                 vol.Required(OPT_LIGHT_RAMP_MINUTES, default=options.get(OPT_LIGHT_RAMP_MINUTES, DEFAULT_LIGHT_RAMP_MINUTES)): _minutes(0, 60),
                 vol.Required(OPT_BRIGHTNESS, default=options.get(OPT_BRIGHTNESS, DEFAULT_BRIGHTNESS)): _percent(),
                 vol.Required(OPT_KELVIN, default=options.get(OPT_KELVIN, DEFAULT_KELVIN)): selector.ColorTempSelector(selector.ColorTempSelectorConfig(unit="kelvin", min=2000, max=6500)),
+                vol.Required(OPT_NOTIFY_ALARMS, default=options.get(OPT_NOTIFY_ALARMS, True)): selector.BooleanSelector(),
                 vol.Optional(OPT_NOTIFY_TARGETS, description={"suggested_value": options.get(OPT_NOTIFY_TARGETS, [])}): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=targets, multiple=True, custom_value=True)
                 ),

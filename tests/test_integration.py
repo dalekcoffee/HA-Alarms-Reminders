@@ -370,3 +370,83 @@ async def test_local_wake_me_in(hass, setup):
         hass, "wake me up in 20 minutes", None, None, language="en", device_id=setup["device"].id
     )
     assert result.response.speech["plain"]["speech"] == "One-time alarm set for 10:20 PM today in the Bedroom."
+
+
+class _Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def monotonic(self):
+        return self.now
+
+
+async def _ring_now(hass, setup, freezer):
+    await _tool(hass, alarm_llm.SetAlarmTool(), setup["device"].id, in_minutes=1)
+    freezer.tick(timedelta(minutes=2))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def test_cut_short_on_device_stops_alarm(hass, setup, freezer, monkeypatch):
+    """If the sound is cut short (EchoLocal "stop" or action button), the alarm stops."""
+    from custom_components.alarms_reminders import manager as manager_mod
+
+    clock = _Clock()
+    monkeypatch.setattr(manager_mod, "monotonic_time", clock)
+    manager = setup["entry"].runtime_data
+    plays = []
+
+    async def short_play(item, media):
+        plays.append(media)
+        clock.now += 3  # car_alarm.wav is ~8 s; device stopped it after 3 s
+
+    monkeypatch.setattr(manager, "async_play", short_play)
+    stopped = []
+    hass.bus.async_listen("alarms_reminders_stopped", stopped.append)
+    await _ring_now(hass, setup, freezer)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert len(plays) == 1
+    assert not manager.ringing
+    assert stopped[0].data["reason"] == "dismissed"
+    # "Okay Nabu, stop" right after still gets a sensible answer
+    assert (await _tool(hass, alarm_llm.StopTool()))["speech"] == "Alarm stopped."
+
+
+async def test_full_play_keeps_ringing(hass, setup, freezer, monkeypatch):
+    """A sound that plays to the end repeats."""
+    from custom_components.alarms_reminders import manager as manager_mod
+
+    clock = _Clock()
+    monkeypatch.setattr(manager_mod, "monotonic_time", clock)
+    manager = setup["entry"].runtime_data
+    plays = []
+    gate = __import__("asyncio").Event()
+
+    async def full_play(item, media):
+        plays.append(media)
+        clock.now += 9
+        if len(plays) >= 2:
+            await gate.wait()
+
+    monkeypatch.setattr(manager, "async_play", full_play)
+    await _ring_now(hass, setup, freezer)
+    for _ in range(3):
+        await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=3))
+    async_fire_time_changed(hass)
+    for _ in range(3):
+        await hass.async_block_till_done()
+    assert manager.ringing
+    await manager.async_stop_ringing()
+    gate.set()
+
+
+async def test_wake_word_stops_alarm(hass, setup, freezer):
+    """The device starting to listen (wake word / action button) stops the alarm."""
+    manager = setup["entry"].runtime_data
+    await _ring_now(hass, setup, freezer)
+    assert manager.ringing
+    hass.states.async_set(setup["satellite"], "listening")
+    await hass.async_block_till_done()
+    assert not manager.ringing
+

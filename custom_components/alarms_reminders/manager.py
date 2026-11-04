@@ -13,7 +13,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import ATTR_ENTITY_ID
-from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Context, Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     area_registry as ar,
@@ -25,7 +25,11 @@ from homeassistant.helpers import (
     entity_registry as er,
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.event import (
+    EventStateChangedData,
+    async_track_point_in_time,
+    async_track_state_change_event,
+)
 from homeassistant.util import dt as dt_util
 
 from . import sounds
@@ -50,6 +54,7 @@ from .const import (
     OPT_DEFAULT_SOUND,
     OPT_KELVIN,
     OPT_LIGHT_RAMP_MINUTES,
+    OPT_NOTIFY_ALARMS,
     OPT_NOTIFY_TARGETS,
     OPT_RAMP_MINUTES,
     OPT_RING_MINUTES,
@@ -60,12 +65,19 @@ from .const import (
     SIGNAL_NEW_ITEM,
     SIGNAL_UPDATED,
 )
-from .model import Item, prune_skips
+from .model import Item, prune_skips, say_time
 
 _LOGGER = logging.getLogger(__name__)
 
 VOLUME_STEP_SECONDS = 15
 TEST_SECONDS = 30
+# A play that ends this much earlier than the sound's length was cut short
+# on the device: its "stop" word, the action button, or the wake word.
+INTERRUPT_MARGIN_SECONDS = 1.5
+JUST_STOPPED_SECONDS = 20
+INTERRUPT_STATES = {"listening", "processing"}
+PHONE_STOP = "ALARMS_REMINDERS_STOP"
+PHONE_SNOOZE = "ALARMS_REMINDERS_SNOOZE"
 LIGHT_STEP_SECONDS = 30
 
 
@@ -92,6 +104,9 @@ class AlarmManager:
         self._unsub_timer: CALLBACK_TYPE | None = None
         self._known: set[str] = set()
         self._writing = False
+        self.last_stopped = -1e9
+        self._unsub_phone: CALLBACK_TYPE | None = None
+        self._durations: dict[str, float | None] = {}
 
     # --- lifecycle --------------------------------------------------------
 
@@ -109,6 +124,9 @@ class AlarmManager:
         """Load items, ring anything missed during a restart, and schedule."""
         self._load()
         self._known = set(self.items)
+        self._unsub_phone = self.hass.bus.async_listen(
+            "mobile_app_notification_action", self._on_phone_action
+        )
         now = dt_util.now()
         today = now.date()
         late: list[str] = []
@@ -135,8 +153,38 @@ class AlarmManager:
         if self._unsub_timer:
             self._unsub_timer()
             self._unsub_timer = None
+        if self._unsub_phone:
+            self._unsub_phone()
+            self._unsub_phone = None
         for ring in list(self.rings.values()):
             ring.cancel()
+
+    async def _on_phone_action(self, event: Event) -> None:
+        action = event.data.get("action")
+        if action == PHONE_STOP:
+            await self.async_stop_ringing()
+        elif action == PHONE_SNOOZE:
+            await self.async_snooze()
+
+    async def async_phone(self, message: str, data: dict[str, Any]) -> None:
+        """Send to every phone picked in the settings."""
+        for target in self.opt(OPT_NOTIFY_TARGETS, []):
+            try:
+                await self.hass.services.async_call(
+                    "notify",
+                    target.removeprefix("notify."),
+                    {"message": message, "data": data},
+                    blocking=True,
+                )
+            except (HomeAssistantError, ValueError) as err:
+                _LOGGER.warning("Could not notify %s: %s", target, err)
+
+    async def async_stop_item(self, sid: str) -> int:
+        """Stop one alarm if it's ringing."""
+        rings = [ring for ring in self.rings.values() if not ring.done and ring.sid == sid]
+        for ring in rings:
+            await ring.async_stop()
+        return len(rings)
 
     @callback
     def async_entry_updated(self) -> None:
@@ -224,14 +272,17 @@ class AlarmManager:
             return
         _LOGGER.debug("Going off: %s", item.title())
         if item.kind == KIND_ALARM:
-            self._start_ring(sid, item)
+            # A one-time alarm stays listed (with its Stop button) until it
+            # stops ringing; Ring removes it then.
+            if not self._start_ring(sid, item) and not item.recurring:
+                self.remove(sid)
         else:
             self.hass.async_create_background_task(
                 self._deliver_reminder(sid, item), f"{item.title()} reminder"
             )
-        if not item.recurring:
-            self.remove(sid)
-        elif prune_skips(item, now.date()):
+            if not item.recurring:
+                self.remove(sid)
+        if item.recurring and prune_skips(item, now.date()):
             self._save(sid, item)
 
     def next_alarm(self, kind: str) -> tuple[str, datetime] | None:
@@ -382,6 +433,20 @@ class AlarmManager:
             await ring.async_stop()
         return len(rings)
 
+    @property
+    def just_stopped(self) -> bool:
+        """An alarm stopped in the last few seconds (e.g. by the device itself)."""
+        return monotonic_time.monotonic() - self.last_stopped < JUST_STOPPED_SECONDS
+
+    async def async_sound_duration(self, item: Item) -> float | None:
+        """Length of an alarm's sound in seconds, if it can be read."""
+        name = item.sound or self.opt(OPT_DEFAULT_SOUND, DEFAULT_SOUND)
+        if name not in self._durations:
+            self._durations[name] = await self.hass.async_add_executor_job(
+                sounds.duration, self.hass, name
+            )
+        return self._durations[name]
+
     async def async_snooze(self, minutes: int | None = None) -> datetime | None:
         """Stop ringing alarms and ring them again later."""
         rings = [ring for ring in self.rings.values() if not ring.done]
@@ -512,6 +577,7 @@ class Ring:
         self._side_tasks: list[asyncio.Task] = []
         self._old_volume: float | None = None
         self._stopping = False
+        self._unsub_state: CALLBACK_TYPE | None = None
 
     def start(self) -> None:
         """Start ringing in the background."""
@@ -526,11 +592,14 @@ class Ring:
                 task.cancel()
         self.done = True
 
-    async def async_stop(self, snoozed: bool = False) -> None:
+    async def async_stop(self, snoozed: bool = False, reason: str | None = None) -> None:
         """Stop ringing and put things back."""
         if self.done or self._stopping:
             return
         self._stopping = True
+        if self._unsub_state:
+            self._unsub_state()
+            self._unsub_state = None
         for task in self._side_tasks:
             task.cancel()
         if self._task:
@@ -544,21 +613,34 @@ class Ring:
             except HomeAssistantError:
                 pass
         await self._restore_volume()
-        self._finish("snoozed" if snoozed else "stopped")
+        self._finish(reason or ("snoozed" if snoozed else "stopped"))
 
     def _finish(self, reason: str) -> None:
         if self.done:
             return
         self.done = True
+        if self._unsub_state:
+            self._unsub_state()
+            self._unsub_state = None
+        if reason != "snoozed":
+            self.manager.last_stopped = monotonic_time.monotonic()
+        _LOGGER.debug("Alarm %s ended: %s", self.item.title(), reason)
+        if self.manager.opt(OPT_NOTIFY_ALARMS, True) and self.manager.opt(OPT_NOTIFY_TARGETS, []):
+            self.hass.async_create_task(
+                self.manager.async_phone("clear_notification", {"tag": self.tag})
+            )
         self.hass.bus.async_fire(
             EVENT_STOPPED,
             {"id": self.sid, "label": self.item.label, "satellite": self.item.satellite, "reason": reason},
         )
         self.manager._ring_finished(self)
+        if not self.test and not self.item.recurring and self.sid in self.manager.items:
+            self.manager.remove(self.sid)
 
     async def _run(self) -> None:
         manager = self.manager
         item = self.item
+        end_reason = "timeout"
         lights = [] if self.test else manager.wake_lights(item)
         self.hass.bus.async_fire(
             EVENT_RINGING,
@@ -578,7 +660,10 @@ class Ring:
             else 60 * float(manager.opt(OPT_RING_MINUTES, DEFAULT_RING_MINUTES))
         )
         target = float(manager.opt(OPT_VOLUME, DEFAULT_VOLUME)) / 100
+        self._watch_satellite()
         try:
+            if manager.opt(OPT_NOTIFY_ALARMS, True):
+                self._side(self._notify_phone())
             if item.media_player and (state := self.hass.states.get(item.media_player)):
                 self._old_volume = state.attributes.get("volume_level")
                 if item.wake and not self.test:
@@ -595,6 +680,7 @@ class Ring:
                 except HomeAssistantError as err:
                     _LOGGER.debug("Could not say the alarm label: %s", err)
             media = manager.sound_media_id(item)
+            length = await manager.async_sound_duration(item)
             deadline = monotonic_time.monotonic() + ring_seconds
             while monotonic_time.monotonic() < deadline:
                 began = monotonic_time.monotonic()
@@ -602,19 +688,73 @@ class Ring:
                     await manager.async_play(item, media)
                 except HomeAssistantError as err:
                     _LOGGER.warning("Alarm sound failed on %s: %s", self.key, err)
-                if monotonic_time.monotonic() - began < 1:
+                played = monotonic_time.monotonic() - began
+                if played < 1:
                     await asyncio.sleep(5)  # failed or returned at once; don't spin
-                else:
-                    await asyncio.sleep(2)  # a gap to say the wake word
+                    continue
+                if length and played < length - INTERRUPT_MARGIN_SECONDS:
+                    # Cut short on the device ("stop", action button): that's a stop.
+                    end_reason = "dismissed"
+                    break
+                await asyncio.sleep(2)  # a gap to say the wake word
         except asyncio.CancelledError:
             raise
         except Exception:
             _LOGGER.exception("Alarm %s failed", item.title())
         if not self._stopping:
+            self._stopping = True
             for task in self._side_tasks:
                 task.cancel()
             await self._restore_volume()
-            self._finish("timeout")
+            self._finish(end_reason)
+
+    @property
+    def tag(self) -> str:
+        """Phone notification tag."""
+        return f"alarms_reminders_{self.sid}"
+
+    async def _notify_phone(self) -> None:
+        item = self.item
+        place = self.manager.placement_for_satellite(item.satellite).area_name
+        text = say_time(item.at) + (f" – {item.label}" if item.label else "")
+        if place:
+            text += f" ({place})"
+        if self.test:
+            text = "Test: " + text
+        await self.manager.async_phone(
+            f"⏰ Alarm ringing: {text}",
+            {
+                "title": "Alarm",
+                "tag": self.tag,
+                "actions": [
+                    {"action": PHONE_STOP, "title": "Stop"},
+                    {"action": PHONE_SNOOZE, "title": "Snooze"},
+                ],
+                "priority": "high",
+                "ttl": 0,
+                "channel": "Alarms",
+                "importance": "high",
+                "persistent": True,
+                "sticky": "true",
+                "push": {"interruption-level": "time-sensitive"},
+            },
+        )
+
+    def _watch_satellite(self) -> None:
+        """Stop when the device starts listening (wake word or action button)."""
+        satellite = self.item.satellite
+        if not satellite:
+            return
+
+        @callback
+        def _changed(event: Event[EventStateChangedData]) -> None:
+            new = event.data["new_state"]
+            if new is None or new.state not in INTERRUPT_STATES or self._stopping:
+                return
+            _LOGGER.debug("%s started listening; stopping the alarm", satellite)
+            self.hass.async_create_task(self.async_stop(reason="dismissed"))
+
+        self._unsub_state = async_track_state_change_event(self.hass, [satellite], _changed)
 
     def _side(self, coro: Any) -> None:
         self._side_tasks.append(
