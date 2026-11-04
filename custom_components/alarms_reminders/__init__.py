@@ -10,7 +10,7 @@ from homeassistant.core import (
     ServiceResponse,
     SupportsResponse,
 )
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
@@ -99,6 +99,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def list_items(call: ServiceCall) -> ServiceResponse:
         return actions.list_items(_manager(hass), call.data.get("kind"))
 
+    async def test(call: ServiceCall) -> ServiceResponse:
+        manager = _manager(hass)
+        for eid in call.data["entity_id"]:
+            try:
+                await manager.async_test(_sid_for_entity(hass, eid), call.data.get("seconds", 30))
+            except HomeAssistantError as err:
+                raise ServiceValidationError(str(err)) from err
+        return None
+
     async def stop(call: ServiceCall) -> ServiceResponse:
         await actions.stop(_manager(hass))
         return None
@@ -135,6 +144,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         DOMAIN, "list", list_items,
         vol.Schema({vol.Optional("kind"): vol.In([KIND_ALARM, KIND_REMINDER, "all"])}),
         supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, "test", test,
+        vol.Schema({vol.Required("entity_id"): cv.entity_ids, vol.Optional("seconds", default=30): vol.All(vol.Coerce(int), vol.Range(min=5, max=600))}),
     )
     hass.services.async_register(DOMAIN, "stop", stop)
     hass.services.async_register(

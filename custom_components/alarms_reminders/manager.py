@@ -65,6 +65,7 @@ from .model import Item, prune_skips
 _LOGGER = logging.getLogger(__name__)
 
 VOLUME_STEP_SECONDS = 15
+TEST_SECONDS = 30
 LIGHT_STEP_SECONDS = 30
 
 
@@ -333,15 +334,36 @@ class AlarmManager:
 
     # --- ringing ----------------------------------------------------------
 
-    def _start_ring(self, sid: str, item: Item) -> None:
+    def _start_ring(self, sid: str, item: Item, test_seconds: float | None = None) -> bool:
         key = item.satellite or item.media_player or "default"
         if (current := self.rings.get(key)) is not None and not current.done:
             _LOGGER.debug("%s is already ringing; keeping that ring", key)
-            return
-        ring = Ring(self, sid, item, key)
+            return False
+        ring = Ring(self, sid, item, key, test_seconds)
         self.rings[key] = ring
         ring.start()
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATED}_{self.entry.entry_id}")
+        return True
+
+    async def async_test(self, sid: str, seconds: float = TEST_SECONDS) -> str:
+        """Try an alarm or reminder now, as configured. Returns what happened."""
+        item = self.items.get(sid)
+        if item is None:
+            raise HomeAssistantError("That alarm or reminder no longer exists")
+        if not (item.satellite or item.media_player):
+            raise HomeAssistantError("It has no voice device to play on. Edit it and pick one")
+        if item.kind == KIND_REMINDER:
+            await self.async_say(item, f"Reminder: {item.message}" if item.message else "Reminder")
+            return "spoken"
+        if not self._start_ring(sid, item, test_seconds=seconds):
+            raise HomeAssistantError("That device is already ringing. Stop it first")
+        return "ringing"
+
+    async def async_test_sound(self, sound: str, satellite: str) -> None:
+        """Play one sound once on a voice device."""
+        placement = self.placement_for_satellite(satellite)
+        item = Item(kind=KIND_ALARM, at=dt_util.now().time(), satellite=satellite, media_player=placement.media_player)
+        await self.async_play(item, sounds.media_id(self.hass, sound))
 
     def _ring_finished(self, ring: Ring) -> None:
         if self.rings.get(ring.key) is ring:
@@ -468,8 +490,17 @@ class AlarmManager:
 class Ring:
     """One alarm going off on one device."""
 
-    def __init__(self, manager: AlarmManager, sid: str, item: Item, key: str) -> None:
-        """Initialise."""
+    def __init__(
+        self,
+        manager: AlarmManager,
+        sid: str,
+        item: Item,
+        key: str,
+        test_seconds: float | None = None,
+    ) -> None:
+        """Initialise. A test rings for test_seconds at full volume, without lights."""
+        self.test = test_seconds is not None
+        self.test_seconds = test_seconds
         self.manager = manager
         self.hass = manager.hass
         self.sid = sid
@@ -528,7 +559,7 @@ class Ring:
     async def _run(self) -> None:
         manager = self.manager
         item = self.item
-        lights = manager.wake_lights(item)
+        lights = [] if self.test else manager.wake_lights(item)
         self.hass.bus.async_fire(
             EVENT_RINGING,
             {
@@ -538,14 +569,19 @@ class Ring:
                 "media_player": item.media_player,
                 "wake": item.wake,
                 "lights": lights,
+                "test": self.test,
             },
         )
-        ring_seconds = 60 * float(manager.opt(OPT_RING_MINUTES, DEFAULT_RING_MINUTES))
+        ring_seconds = (
+            self.test_seconds
+            if self.test_seconds is not None
+            else 60 * float(manager.opt(OPT_RING_MINUTES, DEFAULT_RING_MINUTES))
+        )
         target = float(manager.opt(OPT_VOLUME, DEFAULT_VOLUME)) / 100
         try:
             if item.media_player and (state := self.hass.states.get(item.media_player)):
                 self._old_volume = state.attributes.get("volume_level")
-                if item.wake:
+                if item.wake and not self.test:
                     start = float(manager.opt(OPT_START_VOLUME, DEFAULT_START_VOLUME)) / 100
                     ramp = 60 * float(manager.opt(OPT_RAMP_MINUTES, DEFAULT_RAMP_MINUTES))
                     self._side(self._ramp_volume(min(start, target), target, ramp))

@@ -81,3 +81,19 @@ snooze:
           min: 1
           max: 60
           unit_of_measurement: min
+test:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: alarms_reminders
+          domain: switch
+          multiple: true
+    seconds:
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 600
+          unit_of_measurement: s

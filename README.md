@@ -73,6 +73,12 @@ Each alarm and reminder is listed on the integration page. Use **⋮ › Edit** 
 
 You also get **Next alarm** and **Next reminder** sensors, an **Alarm ringing** sensor, and **Stop alarm** / **Snooze alarm** buttons.
 
+### Testing
+
+- **Test a whole alarm:** each alarm and reminder has a **Test** button. On the integration page, open the alarm's device or entities, or add it to a dashboard. An alarm rings for 30 seconds on its own device, with its sound at alarm volume. The lights and the volume ramp are left out of a test. A reminder is spoken once. Stop alarm works during a test, and the alarm itself is kept.
+- **Test just a sound:** **Configure › Test a sound** plays any sound once on the voice device you pick. The form stays open so you can try another.
+- From automations or scripts: `alarms_reminders.test` with the alarm's switch, plus an optional `seconds`.
+
 ### Dashboard card
 
 ```yaml

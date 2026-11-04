@@ -14,6 +14,7 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
@@ -137,7 +138,7 @@ class AlarmsRemindersOptionsFlow(OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Menu."""
-        menu = ["settings", "add_sound_file", "add_sound_link"]
+        menu = ["settings", "test_sound", "add_sound_file", "add_sound_link"]
         if self.config_entry.options.get(OPT_SOUNDS):
             menu.append("remove_sound")
         return self.async_show_menu(step_id="init", menu_options=menu)
@@ -170,6 +171,39 @@ class AlarmsRemindersOptionsFlow(OptionsFlow):
             }
         )
         return self.async_show_form(step_id="settings", data_schema=schema)
+
+    async def async_step_test_sound(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Play a sound once on a voice device. Stays open to try another."""
+        errors: dict[str, str] = {}
+        options = self.config_entry.options
+        played = ""
+        if user_input is not None:
+            if self.config_entry.state is not ConfigEntryState.LOADED:
+                errors["base"] = "not_loaded"
+            else:
+                try:
+                    await self.config_entry.runtime_data.async_test_sound(
+                        user_input["sound"], user_input["satellite"]
+                    )
+                except HomeAssistantError:
+                    errors["base"] = "play_failed"
+                else:
+                    names = sounds.sound_names(dict(options.get(OPT_SOUNDS, {})))
+                    played = names.get(user_input["sound"], user_input["sound"])
+        last = user_input or {}
+        schema = vol.Schema(
+            {
+                vol.Required("sound", default=last.get("sound", options.get(OPT_DEFAULT_SOUND, DEFAULT_SOUND))): _sound_selector(self.config_entry),
+                vol.Required("satellite", description={"suggested_value": last.get("satellite", options.get(OPT_DEFAULT_SATELLITE))}): selector.EntitySelector(selector.EntitySelectorConfig(domain="assist_satellite")),
+            }
+        )
+        return self.async_show_form(
+            step_id="test_sound",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"played": f"Played {played}. " if played else ""},
+            last_step=False,
+        )
 
     async def async_step_add_sound_file(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Upload an audio file."""
