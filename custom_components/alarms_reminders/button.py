@@ -20,15 +20,19 @@ async def async_setup_entry(
     async_add_entities([StopButton(manager, "stop"), SnoozeButton(manager, "snooze")])
     for sid, sub in entry.subentries.items():
         if sub.subentry_type in (KIND_ALARM, KIND_REMINDER):
-            async_add_entities([TestButton(manager, sid)], config_subentry_id=sid)
+            async_add_entities(_item_buttons(manager, sid), config_subentry_id=sid)
 
     @callback
     def _new(sid: str) -> None:
-        async_add_entities([TestButton(manager, sid)], config_subentry_id=sid)
+        async_add_entities(_item_buttons(manager, sid), config_subentry_id=sid)
 
     entry.async_on_unload(
         async_dispatcher_connect(hass, f"{SIGNAL_NEW_ITEM}_{entry.entry_id}", _new)
     )
+
+
+def _item_buttons(manager: AlarmManager, sid: str) -> list[ButtonEntity]:
+    return [TestButton(manager, sid), StopItemButton(manager, sid)]
 
 
 class StopButton(HubEntity, ButtonEntity):
@@ -73,3 +77,24 @@ class TestButton(AlarmsEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Ring it now."""
         await self.manager.async_test(self.sid)
+
+
+class StopItemButton(TestButton):
+    """Stop this alarm while it rings."""
+
+    _attr_icon = "mdi:alarm-off"
+
+    def __init__(self, manager: AlarmManager, sid: str) -> None:
+        """Initialise."""
+        super().__init__(manager, sid)
+        self._attr_unique_id = f"{sid}_stop"
+
+    @property
+    def name(self) -> str:
+        """'Stop Alarm 7:00 AM, weekdays'."""
+        return "Stop" + super().name.removeprefix("Test")
+
+    async def async_press(self) -> None:
+        """Stop it (or anything ringing, if this one isn't)."""
+        if not await self.manager.async_stop_item(self.sid):
+            await self.manager.async_stop_ringing()

@@ -32,6 +32,9 @@ class AlarmsEntity(Entity):
 
     @callback
     def _changed(self) -> None:
+        sid = getattr(self, "sid", None)
+        if sid is not None and sid not in self.manager.entry.subentries:
+            return  # being removed along with its alarm or reminder
         self.async_write_ha_state()
 
 

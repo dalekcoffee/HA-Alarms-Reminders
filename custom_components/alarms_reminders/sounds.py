@@ -226,6 +226,23 @@ def delete_sound(hass: HomeAssistant, file_name: str) -> None:
     path.unlink(missing_ok=True)
 
 
+def duration(hass: HomeAssistant, file_name: str) -> float | None:
+    """Length of a sound file in seconds, or None. Runs in the executor."""
+    _, folder = media_root(hass)
+    path = folder / file_name
+    try:
+        if path.suffix.lower() == ".wav":
+            with wave.open(str(path), "rb") as wav:
+                return wav.getnframes() / float(wav.getframerate())
+        import mutagen
+
+        info = mutagen.File(str(path))
+        return float(info.info.length) if info and info.info else None
+    except Exception:  # unknown length just disables the check
+        _LOGGER.debug("Could not read the length of %s", path, exc_info=True)
+        return None
+
+
 def sound_names(sounds: dict[str, str]) -> dict[str, str]:
     """All sounds: built-ins first, then the user's own."""
     names = {name: label for name, (label, _make) in BUILT_IN.items()}
