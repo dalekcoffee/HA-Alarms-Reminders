@@ -17,6 +17,7 @@
         "title": "Alarms & Reminders",
         "menu_options": {
           "settings": "Settings",
+          "test_sound": "Test a sound",
           "add_sound_file": "Add a sound (upload a file)",
           "add_sound_link": "Add a sound (from a link)",
           "remove_sound": "Remove a sound"
@@ -68,13 +69,23 @@
         "data": {
           "sound": "Sound"
         }
+      },
+      "test_sound": {
+        "title": "Test a sound",
+        "description": "{played}Pick a sound and a voice device, then click Submit to play it once. To hear a whole alarm, with its room, sound and volume, press its Test button on the integration page.",
+        "data": {
+          "sound": "Sound",
+          "satellite": "Voice device"
+        }
       }
     },
     "error": {
       "not_audio": "That isn't an audio file.",
       "bad_url": "Enter a link starting with http:// or https://.",
       "download_failed": "The download failed. Check the link points straight to an audio file.",
-      "too_big": "That file is over 25 MB."
+      "too_big": "That file is over 25 MB.",
+      "play_failed": "Couldn't play it on that device. Check it's online.",
+      "not_loaded": "Alarms & Reminders isn't running. Reload it and try again."
     }
   },
   "config_subentries": {
@@ -326,6 +337,20 @@
         "minutes": {
           "name": "Minutes",
           "description": "Empty = the snooze time from settings."
+        }
+      }
+    },
+    "test": {
+      "name": "Test",
+      "description": "Rings an alarm now (without lights) or speaks a reminder, as configured.",
+      "fields": {
+        "entity_id": {
+          "name": "Alarm or reminder",
+          "description": "Its switch."
+        },
+        "seconds": {
+          "name": "Seconds",
+          "description": "How long an alarm rings."
         }
       }
     }

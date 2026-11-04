@@ -291,3 +291,49 @@ async def test_local_stop_sentence(hass, setup, freezer):
 
     result = await conversation.async_converse(hass, "snooze the alarm", None, None, language="en")
     assert result.response.speech["plain"]["speech"] == "No alarm is ringing."
+
+
+async def test_test_button_rings_without_lights(hass, setup):
+    """Each alarm has a Test button that rings it now, without lights, and keeps it."""
+    await _tool(hass, alarm_llm.SetAlarmTool(), setup["device"].id, time="07:00", repeat="weekdays", wake_up=True)
+    await hass.async_block_till_done()
+    button = next(
+        s.entity_id for s in hass.states.async_all("button") if s.entity_id.startswith("button.test_")
+    )
+    events = []
+    hass.bus.async_listen(EVENT_RINGING, events.append)
+    await hass.services.async_call("button", "press", {"entity_id": button}, blocking=True)
+    await hass.async_block_till_done()
+    manager = setup["entry"].runtime_data
+    assert manager.ringing
+    assert events[0].data["test"] is True
+    assert setup["calls"]["announce"][0].data["media_id"].endswith("car_alarm.wav")
+    assert not setup["calls"]["light"]
+    assert setup["calls"]["volume"][0].data["volume_level"] == 0.7  # no ramp in a test
+    await manager.async_stop_ringing()
+    assert len(setup["entry"].subentries) == 1
+
+
+async def test_test_button_speaks_reminder(hass, setup):
+    """A reminder's Test button speaks it."""
+    await _tool(hass, alarm_llm.SetReminderTool(), setup["device"].id, message="feed the cat", time="08:00")
+    await hass.async_block_till_done()
+    button = next(
+        s.entity_id for s in hass.states.async_all("button") if s.entity_id.startswith("button.test_")
+    )
+    await hass.services.async_call("button", "press", {"entity_id": button}, blocking=True)
+    assert setup["calls"]["announce"][-1].data["message"] == "Reminder: feed the cat"
+
+
+async def test_options_test_sound(hass, setup):
+    """Configure › Test a sound plays it once and stays open."""
+    entry = setup["entry"]
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "test_sound"})
+    assert result["step_id"] == "test_sound"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"sound": "beeps.wav", "satellite": setup["satellite"]}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["description_placeholders"]["played"] == "Played Beeps. "
+    assert setup["calls"]["announce"][-1].data["media_id"].endswith("/alarms_reminders/beeps.wav")
