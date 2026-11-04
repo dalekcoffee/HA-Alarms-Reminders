@@ -1,0 +1,333 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Alarms & Reminders",
+        "description": "Adds voice alarms and reminders. Change the settings and sounds afterwards with Configure."
+      }
+    },
+    "abort": {
+      "already_configured": "Alarms & Reminders is already set up.",
+      "single_instance_allowed": "Alarms & Reminders is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Alarms & Reminders",
+        "menu_options": {
+          "settings": "Settings",
+          "add_sound_file": "Add a sound (upload a file)",
+          "add_sound_link": "Add a sound (from a link)",
+          "remove_sound": "Remove a sound"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "default_sound": "Default alarm sound",
+          "default_satellite": "Default voice device",
+          "ring_minutes": "Ring for",
+          "snooze_minutes": "Snooze for",
+          "volume": "Alarm volume",
+          "start_volume": "Wake-up starting volume",
+          "ramp_minutes": "Wake-up volume ramp",
+          "wake_lights": "Wake-up lights",
+          "light_ramp_minutes": "Wake-up light ramp",
+          "brightness": "Wake-up brightness",
+          "kelvin": "Wake-up light colour",
+          "notify_targets": "Phones for reminders"
+        },
+        "data_description": {
+          "default_satellite": "Used when an alarm is set from a dashboard or the Assist dialog instead of a voice device.",
+          "ring_minutes": "Alarms stop by themselves after this long if nobody stops them.",
+          "ramp_minutes": "Wake-up alarms go from the starting volume to the alarm volume over this time. 0 = full volume straight away.",
+          "wake_lights": "Leave empty to use the lights in the same room as the voice device.",
+          "light_ramp_minutes": "Wake-up lights go from 1% to full brightness over this time. 0 = straight on.",
+          "notify_targets": "Home Assistant app notify actions, e.g. notify.mobile_app_pixel."
+        }
+      },
+      "add_sound_file": {
+        "title": "Upload a sound",
+        "data": {
+          "name": "Name",
+          "file": "Audio file"
+        },
+        "description": "MP3, WAV, OGG, FLAC or M4A. It's saved in Media › Local Media › alarms_reminders."
+      },
+      "add_sound_link": {
+        "title": "Add a sound from a link",
+        "data": {
+          "name": "Name",
+          "url": "Link"
+        },
+        "description": "A direct link to an audio file. YouTube and other video pages don't work: download the audio and upload it instead."
+      },
+      "remove_sound": {
+        "title": "Remove a sound",
+        "data": {
+          "sound": "Sound"
+        }
+      }
+    },
+    "error": {
+      "not_audio": "That isn't an audio file.",
+      "bad_url": "Enter a link starting with http:// or https://.",
+      "download_failed": "The download failed. Check the link points straight to an audio file.",
+      "too_big": "That file is over 25 MB."
+    }
+  },
+  "config_subentries": {
+    "alarm": {
+      "entry_type": "Alarm",
+      "initiate_flow": {
+        "user": "Add alarm",
+        "reconfigure": "Edit alarm"
+      },
+      "step": {
+        "user": {
+          "title": "Add alarm",
+          "data": {
+            "time": "Time",
+            "repeat": "Repeat on",
+            "date": "Date (one-time only)",
+            "satellite": "Voice device (room)",
+            "enabled": "On",
+            "skip_next": "Skip the next one",
+            "clear_skips": "Un-skip all skipped days",
+            "label": "Label",
+            "sound": "Sound",
+            "wake": "Wake-up alarm",
+            "lights": "Lights"
+          },
+          "data_description": {
+            "repeat": "Pick days to make it recurring. Leave empty for one time.",
+            "date": "For a one-time item. Leave empty for the next time the clock reaches this time. Ignored when repeat days are picked.",
+            "satellite": "Where it rings or is spoken.",
+            "skip_next": "Skips one day without deleting it. Skipped days: {skipped}",
+            "sound": "Leave empty to use the default sound from the integration settings.",
+            "wake": "Volume and lights ease up gradually.",
+            "lights": "Lights to turn on. Leave empty to use your wake-up lights (or the lights in the device's room) for wake-up alarms."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit alarm",
+          "data": {
+            "time": "Time",
+            "repeat": "Repeat on",
+            "date": "Date (one-time only)",
+            "satellite": "Voice device (room)",
+            "enabled": "On",
+            "skip_next": "Skip the next one",
+            "clear_skips": "Un-skip all skipped days",
+            "label": "Label",
+            "sound": "Sound",
+            "wake": "Wake-up alarm",
+            "lights": "Lights"
+          },
+          "data_description": {
+            "repeat": "Pick days to make it recurring. Leave empty for one time.",
+            "date": "For a one-time item. Leave empty for the next time the clock reaches this time. Ignored when repeat days are picked.",
+            "satellite": "Where it rings or is spoken.",
+            "skip_next": "Skips one day without deleting it. Skipped days: {skipped}",
+            "sound": "Leave empty to use the default sound from the integration settings.",
+            "wake": "Volume and lights ease up gradually.",
+            "lights": "Lights to turn on. Leave empty to use your wake-up lights (or the lights in the device's room) for wake-up alarms."
+          }
+        }
+      },
+      "error": {
+        "bad_time": "That time or date isn't valid.",
+        "in_past": "That time has already passed."
+      },
+      "abort": {
+        "entry_not_loaded": "Alarms & Reminders isn't running. Reload it and try again."
+      }
+    },
+    "reminder": {
+      "entry_type": "Reminder",
+      "initiate_flow": {
+        "user": "Add reminder",
+        "reconfigure": "Edit reminder"
+      },
+      "step": {
+        "user": {
+          "title": "Add reminder",
+          "data": {
+            "time": "Time",
+            "repeat": "Repeat on",
+            "date": "Date (one-time only)",
+            "satellite": "Voice device (room)",
+            "enabled": "On",
+            "skip_next": "Skip the next one",
+            "clear_skips": "Un-skip all skipped days",
+            "message": "Remind me to",
+            "notify_phone": "Also send to my phone"
+          },
+          "data_description": {
+            "repeat": "Pick days to make it recurring. Leave empty for one time.",
+            "date": "For a one-time item. Leave empty for the next time the clock reaches this time. Ignored when repeat days are picked.",
+            "satellite": "Where it rings or is spoken.",
+            "skip_next": "Skips one day without deleting it. Skipped days: {skipped}"
+          }
+        },
+        "reconfigure": {
+          "title": "Edit reminder",
+          "data": {
+            "time": "Time",
+            "repeat": "Repeat on",
+            "date": "Date (one-time only)",
+            "satellite": "Voice device (room)",
+            "enabled": "On",
+            "skip_next": "Skip the next one",
+            "clear_skips": "Un-skip all skipped days",
+            "message": "Remind me to",
+            "notify_phone": "Also send to my phone"
+          },
+          "data_description": {
+            "repeat": "Pick days to make it recurring. Leave empty for one time.",
+            "date": "For a one-time item. Leave empty for the next time the clock reaches this time. Ignored when repeat days are picked.",
+            "satellite": "Where it rings or is spoken.",
+            "skip_next": "Skips one day without deleting it. Skipped days: {skipped}"
+          }
+        }
+      },
+      "error": {
+        "bad_time": "That time or date isn't valid.",
+        "in_past": "That time has already passed."
+      },
+      "abort": {
+        "entry_not_loaded": "Alarms & Reminders isn't running. Reload it and try again."
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ringing": {
+        "name": "Alarm ringing"
+      }
+    },
+    "button": {
+      "stop": {
+        "name": "Stop alarm"
+      },
+      "snooze": {
+        "name": "Snooze alarm"
+      }
+    },
+    "sensor": {
+      "next_alarm": {
+        "name": "Next alarm"
+      },
+      "next_reminder": {
+        "name": "Next reminder"
+      }
+    }
+  },
+  "services": {
+    "set_alarm": {
+      "name": "Set alarm",
+      "description": "Adds an alarm.",
+      "fields": {
+        "time": {
+          "name": "Time",
+          "description": "When it rings."
+        },
+        "date": {
+          "name": "Date",
+          "description": "Day for a one-time alarm."
+        },
+        "repeat": {
+          "name": "Repeat",
+          "description": "weekdays, weekends, daily, or day names. Empty = one time."
+        },
+        "label": {
+          "name": "Label",
+          "description": "Name of the alarm."
+        },
+        "room": {
+          "name": "Room",
+          "description": "Area whose voice device rings."
+        },
+        "wake_up": {
+          "name": "Wake-up",
+          "description": "Ease up volume and lights."
+        }
+      }
+    },
+    "set_reminder": {
+      "name": "Set reminder",
+      "description": "Adds a reminder.",
+      "fields": {
+        "message": {
+          "name": "Message",
+          "description": "What to remind you about."
+        },
+        "time": {
+          "name": "Time",
+          "description": "When."
+        },
+        "date": {
+          "name": "Date",
+          "description": "Day for a one-time reminder."
+        },
+        "repeat": {
+          "name": "Repeat",
+          "description": "weekdays, weekends, daily, or day names. Empty = one time."
+        },
+        "room": {
+          "name": "Room",
+          "description": "Area whose voice device speaks it."
+        }
+      }
+    },
+    "skip_next": {
+      "name": "Skip next",
+      "description": "Skips one day of a repeating alarm without deleting it.",
+      "fields": {
+        "entity_id": {
+          "name": "Alarm",
+          "description": "The alarm's switch."
+        },
+        "date": {
+          "name": "Date",
+          "description": "Day to skip. Empty = the next one."
+        }
+      }
+    },
+    "delete": {
+      "name": "Delete",
+      "description": "Deletes alarms or reminders.",
+      "fields": {
+        "entity_id": {
+          "name": "Alarm or reminder",
+          "description": "Its switch."
+        }
+      }
+    },
+    "list": {
+      "name": "List",
+      "description": "Returns your alarms and reminders.",
+      "fields": {
+        "kind": {
+          "name": "Kind",
+          "description": "alarm, reminder or all."
+        }
+      }
+    },
+    "stop": {
+      "name": "Stop",
+      "description": "Stops ringing alarms."
+    },
+    "snooze": {
+      "name": "Snooze",
+      "description": "Snoozes ringing alarms.",
+      "fields": {
+        "minutes": {
+          "name": "Minutes",
+          "description": "Empty = the snooze time from settings."
+        }
+      }
+    }
+  }
+}
