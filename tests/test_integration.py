@@ -337,3 +337,36 @@ async def test_options_test_sound(hass, setup):
     assert result["type"] is FlowResultType.FORM
     assert result["description_placeholders"]["played"] == "Played Beeps. "
     assert setup["calls"]["announce"][-1].data["media_id"].endswith("/alarms_reminders/beeps.wav")
+
+
+@pytest.mark.parametrize(
+    ("sentence", "speech"),
+    [
+        ("remind me to check the oven in 15 minutes", "One-time reminder set to check the oven for 10:15 PM today in the Bedroom."),
+        ("remind me in 2 hours to call mom", "One-time reminder set to call mom for 12:00 AM tomorrow in the Bedroom."),
+        ("in half an hour remind me to stretch", "One-time reminder set to stretch for 10:30 PM today in the Bedroom."),
+        ("remind me to check the oven in fifteen minutes", "One-time reminder set to check the oven for 10:15 PM today in the Bedroom."),
+    ],
+)
+async def test_local_remind_me_in(hass, setup, sentence, speech):
+    """'Remind me ... in N minutes' makes a reminder, not HA's delayed-command timer."""
+    from homeassistant.components import conversation
+
+    await async_setup_component(hass, "conversation", {})
+    result = await conversation.async_converse(
+        hass, sentence, None, None, language="en", device_id=setup["device"].id
+    )
+    await hass.async_block_till_done()
+    assert result.response.speech["plain"]["speech"] == speech
+    assert len(setup["entry"].subentries) == 1
+
+
+async def test_local_wake_me_in(hass, setup):
+    """'Wake me up in 20 minutes' makes a one-time alarm."""
+    from homeassistant.components import conversation
+
+    await async_setup_component(hass, "conversation", {})
+    result = await conversation.async_converse(
+        hass, "wake me up in 20 minutes", None, None, language="en", device_id=setup["device"].id
+    )
+    assert result.response.speech["plain"]["speech"] == "One-time alarm set for 10:20 PM today in the Bedroom."

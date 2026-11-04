@@ -25,7 +25,7 @@ from .compat import vol
 from .const import DOMAIN, KIND_ALARM, KIND_REMINDER
 from .manager import AlarmManager
 
-PROMPT = """Alarms and reminders (use the alarms_reminders tools, never timers, for these):
+PROMPT = """Alarms and reminders: always use the alarms_reminders tools for these, never a timer or a delayed command, even for "remind me in 15 minutes".
 - Only make an alarm or reminder recurring when the user says so ("every weekday", "every Monday", "daily"). Otherwise it is one time.
 - Pass times as 24-hour HH:MM and dates as YYYY-MM-DD, worked out from the current date and time. For "in 20 minutes" use in_minutes.
 - If the user asks for a reminder without a time, ask them what time before calling the tool. Don't guess a time.
