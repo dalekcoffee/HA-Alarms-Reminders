@@ -42,7 +42,7 @@ Open the integration and click **Configure › Settings**:
 | Wake-up starting volume / ramp | 10%, 10 min | Wake-up alarms start quiet and get louder. |
 | Wake-up lights | the room's lights | Leave empty to use the lights in the same room as the voice device. |
 | Wake-up light ramp / brightness / colour | 10 min, 100%, 6500 K | Lights go from 1% to full, white. |
-| Phones | none | Pick your `notify.mobile_app_…` action from the Home Assistant app. Reminders are sent here. |
+| Phones | every app phone | Pick your `notify.mobile_app_…` actions from the Home Assistant app. Leave empty to use every phone with the app. Reminders are sent here. |
 | Send ringing alarms to phones | on | While an alarm rings, the phones get a notification with **Stop** and **Snooze**. It clears when the alarm ends. |
 
 ### Sounds
@@ -112,6 +112,8 @@ Events you can trigger on: `alarms_reminders_ringing`, `alarms_reminders_stopped
 ## Good to know
 
 - **Stopping on Echo Dots (EchoLocal):** saying "stop" or pressing the action button cuts the sound short, and the integration takes that as a stop. The wake word also stops it, because the device starts listening. This relies on knowing the sound's length, which works for WAV, MP3, OGG, FLAC and M4A files.
+- **Echo Dot action button:** a tap stops the alarm and a hold snoozes it. The integration watches the Dot's **Action button** event entity, so this works even when the Dot doesn't report the stop itself.
+- **Troubleshooting a stop:** turn on **Enable debug logging** on the integration page, ring a test alarm and stop it. The log shows how long each play took and which entities were watched.
 - **Phone actions:** the Stop and Snooze buttons on the notification need the Home Assistant companion app. On Android the notification uses an "Alarms" channel with high importance.
 - **Missed alarms:** a one-time alarm that should have rung while Home Assistant was off still rings if it's no more than 10 minutes late. Otherwise it's removed and logged.
 - **Cloud lights** (like Govee cloud) update every 30 seconds during the ramp, so they stay within rate limits.

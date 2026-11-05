@@ -46,7 +46,7 @@
           "ramp_minutes": "Wake-up alarms go from the starting volume to the alarm volume over this time. 0 = full volume straight away.",
           "wake_lights": "Leave empty to use the lights in the same room as the voice device.",
           "light_ramp_minutes": "Wake-up lights go from 1% to full brightness over this time. 0 = straight on.",
-          "notify_targets": "Home Assistant app notify actions, e.g. notify.mobile_app_pixel. Used for reminders and ringing alarms.",
+          "notify_targets": "Home Assistant app notify actions, e.g. notify.mobile_app_pixel. Used for reminders and ringing alarms. Leave empty to use every phone with the Home Assistant app.",
           "notify_alarms": "Shows a notification with Stop and Snooze buttons on the phones below while an alarm rings."
         }
       },

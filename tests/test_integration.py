@@ -293,8 +293,14 @@ async def test_local_stop_sentence(hass, setup, freezer):
     assert result.response.speech["plain"]["speech"] == "No alarm is ringing."
 
 
-async def test_test_button_rings_without_lights(hass, setup):
+async def test_test_button_rings_without_lights(hass, setup, monkeypatch):
     """Each alarm has a Test button that rings it now, without lights, and keeps it."""
+    manager = setup["entry"].runtime_data
+
+    async def no_length(item):
+        return None  # skip the executor read so the sound starts within block_till_done
+
+    monkeypatch.setattr(manager, "async_sound_duration", no_length)
     await _tool(hass, alarm_llm.SetAlarmTool(), setup["device"].id, time="07:00", repeat="weekdays", wake_up=True)
     await hass.async_block_till_done()
     button = next(
@@ -450,3 +456,46 @@ async def test_wake_word_stops_alarm(hass, setup, freezer):
     await hass.async_block_till_done()
     assert not manager.ringing
 
+
+
+async def test_action_button_stops_alarm(hass, setup, freezer):
+    """A tap on the device's action button (EchoLocal event entity) stops the alarm."""
+    manager = setup["entry"].runtime_data
+    button = er.async_get(hass).async_get_or_create(
+        "event", "test", "action", device_id=setup["device"].id, original_name="Action button"
+    )
+    hass.states.async_set(button.entity_id, "2026-11-04T21:00:00+00:00", {"event_type": "press"})
+    await _ring_now(hass, setup, freezer)
+    assert manager.ringing
+    hass.states.async_set(button.entity_id, "2026-11-05T03:02:00+00:00", {"event_type": "press"})
+    await hass.async_block_till_done()
+    assert not manager.ringing
+
+
+async def test_action_button_hold_snoozes(hass, setup, freezer):
+    """Holding the action button snoozes."""
+    manager = setup["entry"].runtime_data
+    button = er.async_get(hass).async_get_or_create(
+        "event", "test", "action", device_id=setup["device"].id, original_name="Action button"
+    )
+    hass.states.async_set(button.entity_id, "unknown")
+    await _ring_now(hass, setup, freezer)
+    hass.states.async_set(button.entity_id, "2026-11-05T03:02:00+00:00", {"event_type": "hold"})
+    await hass.async_block_till_done()
+    assert not manager.ringing
+    assert any(item.snooze for item in manager.items.values())
+
+
+async def test_phones_default_to_every_app_phone(hass, setup, freezer):
+    """With no phones picked, a ringing alarm still goes to every Home Assistant app phone."""
+    entry = setup["entry"]
+    hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_NOTIFY_TARGETS: []})
+    await hass.async_block_till_done()
+    manager = entry.runtime_data
+    assert manager.phone_targets() == ["notify.mobile_app_phone"]
+    await _ring_now(hass, setup, freezer)
+    await hass.async_block_till_done()
+    sent = setup["calls"]["notify"][-1].data
+    assert sent["message"].startswith("⏰ Alarm ringing")
+    assert {a["title"] for a in sent["data"]["actions"]} == {"Stop", "Snooze"}
+    await manager.async_stop_ringing()
