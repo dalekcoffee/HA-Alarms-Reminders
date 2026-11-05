@@ -6,6 +6,7 @@ Voice alarms and reminders for Assist voice devices (ESPHome satellites, Voice P
 - **Reminders:** "Remind me to call the vet on Friday at 3" is spoken on the voice device and sent to your phone. If you don't give a time, it asks.
 - **Wake-up alarms:** volume and lights ease up over 10 minutes, with lights going to full brightness, white.
 - **Skip without deleting:** "Skip tomorrow's alarm".
+- **Vacation mode:** "Turn on vacation mode until Sunday" keeps every alarm quiet until midnight at the end of that day. Reminders still go off. An end date is required.
 - **Stop and snooze:** say "stop" on the device, press its action button, say the wake word, tap **Stop** on the alarm in Home Assistant, or tap **Stop** on the phone notification. "Okay Nabu, snooze" snoozes. It stops by itself after 10 minutes.
 - **Your own sounds:** a built-in car-alarm siren, beeps and a chime, plus any audio file you upload or link.
 
@@ -72,6 +73,8 @@ Try:
 
 Each alarm and reminder is listed on the integration page. Use **⋮ › Edit** to change the time, days, room, sound or lights, or to skip the next one. **Add alarm** and **Add reminder** create new ones. Each also has an on/off switch. A one-time alarm stays listed until it has finished ringing, then it is removed.
 
+For vacation mode there's a **Vacation ends** date and a **Vacation mode** switch: pick the last day, then turn the switch on. Alarms are off until midnight at the end of that day, and the switch turns itself off then. Repeating alarms pick up again the next day. One-time alarms that fall inside the vacation are dropped without ringing. Reminders aren't affected.
+
 You also get **Next alarm** and **Next reminder** sensors, an **Alarm ringing** sensor, and **Stop alarm** / **Snooze alarm** buttons.
 
 ### Testing
@@ -107,7 +110,7 @@ To turn alarms on and off from the dashboard, add an **Entities** card with thei
 
 ### Automations
 
-Events you can trigger on: `alarms_reminders_ringing`, `alarms_reminders_stopped` (with `reason`: stopped, snoozed, dismissed or timeout; dismissed means it was stopped on the device) and `alarms_reminders_reminder`. Actions: `alarms_reminders.set_alarm`, `set_reminder`, `skip_next`, `delete`, `list`, `stop`, `snooze`.
+Events you can trigger on: `alarms_reminders_ringing`, `alarms_reminders_stopped` (with `reason`: stopped, snoozed, dismissed or timeout; dismissed means it was stopped on the device) and `alarms_reminders_reminder`. Actions: `alarms_reminders.set_alarm`, `set_reminder`, `skip_next`, `delete`, `list`, `stop`, `snooze`, `vacation_on` (with `end_date`), `vacation_off`.
 
 ## Good to know
 

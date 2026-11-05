@@ -11,6 +11,7 @@ from homeassistant.util import dt as dt_util
 from .const import KIND_ALARM, KIND_REMINDER
 from .manager import AlarmManager, Placement
 from .model import (
+    DAY_NAMES,
     Item,
     ParseError,
     first_date_for,
@@ -261,6 +262,8 @@ def list_items(manager: AlarmManager, kind: str | None) -> dict[str, Any]:
                     "skipped_dates": [d.isoformat() for d in item.skip],
                 }
             )
+    if kinds != [KIND_REMINDER] and (status := vacation_status(manager)):
+        parts.insert(0, status)
     return _ok(" ".join(parts), items=items_out)
 
 
@@ -407,3 +410,43 @@ async def snooze(manager: AlarmManager, minutes: Any = None) -> dict[str, Any]:
     if when is None:
         return _fail("No alarm is ringing.")
     return _ok(f"Snoozed until {say_time(when.time())}.")
+
+
+def _long_day(day: Any) -> str:
+    return f"{DAY_NAMES[day.weekday()].capitalize()}, {day.strftime('%B')} {day.day}"
+
+
+def vacation_on(manager: AlarmManager, end_date: Any) -> dict[str, Any]:
+    """Turn vacation mode on until midnight at the end of end_date."""
+    if end_date in (None, ""):
+        return _fail("Vacation mode needs an end date. Until what day?")
+    try:
+        day = parse_date(end_date)
+    except ParseError as err:
+        return _fail(str(err))
+    today = dt_util.now().date()
+    if day < today:
+        return _fail("That date has already passed. Until what day?")
+    manager.set_vacation(True, day)
+    return _ok(
+        f"Vacation mode is on until midnight at the end of {_long_day(day)}. "
+        f"Alarms won't ring until then and start again {_long_day(day + timedelta(days=1))}. "
+        "Reminders still go off.",
+        vacation_until=day.isoformat(),
+    )
+
+
+def vacation_off(manager: AlarmManager) -> dict[str, Any]:
+    """Turn vacation mode off."""
+    if manager.vacation_end is None:
+        return _ok("Vacation mode is already off.")
+    manager.set_vacation(False)
+    return _ok("Vacation mode is off. Your alarms are back on.")
+
+
+def vacation_status(manager: AlarmManager) -> str:
+    """'' or a sentence saying vacation mode is on."""
+    end = manager.vacation_end
+    if end is None:
+        return ""
+    return f"Vacation mode is on until midnight at the end of {_long_day(end)}, so alarms won't ring until then."

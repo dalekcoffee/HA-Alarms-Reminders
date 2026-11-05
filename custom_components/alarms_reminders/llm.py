@@ -30,7 +30,8 @@ PROMPT = """Alarms and reminders: always use the alarms_reminders tools for thes
 - Pass times as 24-hour HH:MM and dates as YYYY-MM-DD, worked out from the current date and time. For "in 20 minutes" use in_minutes.
 - If the user asks for a reminder without a time, ask them what time before calling the tool. Don't guess a time.
 - After setting or changing one, repeat the tool's confirmation, including whether it is one time or recurring and the room.
-- "Skip" means skip one day of a repeating alarm without deleting it."""
+- "Skip" means skip one day of a repeating alarm without deleting it.
+- Vacation mode turns off alarms (not reminders) until midnight at the end of an end date. It always needs an end date: if the user doesn't give one, ask until what day before calling the tool. Repeat the tool's confirmation, which says when it ends."""
 
 KIND = vol.In([KIND_ALARM, KIND_REMINDER, "all"])
 
@@ -251,6 +252,32 @@ class SnoozeTool(_AlarmTool):
         return await actions.snooze(manager, args.get("minutes"))
 
 
+class VacationOnTool(_AlarmTool):
+    name = f"{DOMAIN}__vacation_on"
+    title = "Turn on vacation mode"
+    description = (
+        "Turns on vacation mode: no alarms ring until midnight at the end of end_date. "
+        "Reminders are not affected. Ask the user for the end date if they didn't give one."
+    )
+    annotations = _WRITE
+    parameters = vol.Schema(
+        {vol.Required("end_date", description="YYYY-MM-DD, the last day of vacation"): cv.string}
+    )
+
+    async def run(self, manager, args, llm_context):
+        return actions.vacation_on(manager, args.get("end_date"))
+
+
+class VacationOffTool(_AlarmTool):
+    name = f"{DOMAIN}__vacation_off"
+    title = "Turn off vacation mode"
+    description = "Turns vacation mode off, so alarms ring again."
+    annotations = _WRITE
+
+    async def run(self, manager, args, llm_context):
+        return actions.vacation_off(manager)
+
+
 @callback
 def async_get_tools(
     hass: HomeAssistant, llm_context: LLMContext, api_id: str
@@ -267,5 +294,7 @@ def async_get_tools(
         SkipTool(),
         StopTool(),
         SnoozeTool(),
+        VacationOnTool(),
+        VacationOffTool(),
     ]
     return LLMTools(tools=tools, prompt=PROMPT)

@@ -7,7 +7,7 @@ import logging
 import time as monotonic_time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from types import MappingProxyType
 from typing import Any
 
@@ -60,6 +60,8 @@ from .const import (
     OPT_RING_MINUTES,
     OPT_SNOOZE_MINUTES,
     OPT_START_VOLUME,
+    OPT_VACATION,
+    OPT_VACATION_END,
     OPT_VOLUME,
     OPT_WAKE_LIGHTS,
     SIGNAL_NEW_ITEM,
@@ -253,6 +255,43 @@ class AlarmManager:
         self.items.pop(sid, None)
         self.next_fires.pop(sid, None)
 
+    # --- vacation mode ----------------------------------------------------
+
+    @property
+    def vacation_end(self) -> date | None:
+        """Last day of vacation mode, or None when it's off."""
+        if not self.opt(OPT_VACATION, False):
+            return None
+        return self.vacation_end_date
+
+    @property
+    def vacation_end_date(self) -> date | None:
+        """The vacation end date that's set, even while vacation mode is off."""
+        try:
+            return date.fromisoformat(str(self.opt(OPT_VACATION_END, "")))
+        except ValueError:
+            return None
+
+    def vacation_until(self) -> datetime | None:
+        """Midnight at the end of the vacation's last day, or None when it's off."""
+        if (end := self.vacation_end) is None:
+            return None
+        return datetime.combine(end + timedelta(days=1), time(0), tzinfo=dt_util.get_default_time_zone())
+
+    def on_vacation(self, when: datetime) -> bool:
+        """Whether alarms are off at this time."""
+        until = self.vacation_until()
+        return until is not None and when < until
+
+    def set_vacation(self, on: bool, end: date | None = None) -> None:
+        """Turn vacation mode on (until the end of `end`) or off."""
+        changes: dict[str, Any] = {OPT_VACATION: on}
+        if end is not None:
+            changes[OPT_VACATION_END] = end.isoformat()
+        self.hass.config_entries.async_update_entry(
+            self.entry, options={**self.entry.options, **changes}
+        )
+
     # --- scheduling -------------------------------------------------------
 
     @callback
@@ -262,12 +301,24 @@ class AlarmManager:
             self._unsub_timer = None
         tz = dt_util.get_default_time_zone()
         self.next_fires = {}
+        until = self.vacation_until()
+        if until is not None and until <= now:
+            # Vacation is over. Saving that reschedules through the update
+            # listener, once it is set up; carry on in case it isn't yet.
+            self.set_vacation(False)
+            until = None
+            if self._unsub_timer:
+                self._unsub_timer()
+                self._unsub_timer = None
         for sid, item in self.items.items():
-            if (when := item.next_fire(now, tz)) is not None:
+            when = item.next_fire(now, tz)
+            if when is not None and item.kind == KIND_ALARM and item.recurring and self.on_vacation(when):
+                when = item.next_fire(until - timedelta(microseconds=1), tz)
+            if when is not None:
                 self.next_fires[sid] = when
-        if self.next_fires:
-            earliest = min(self.next_fires.values())
-            self._unsub_timer = async_track_point_in_time(self.hass, self._on_timer, earliest)
+        wakes = list(self.next_fires.values()) + ([until] if until else [])
+        if wakes:
+            self._unsub_timer = async_track_point_in_time(self.hass, self._on_timer, min(wakes))
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATED}_{self.entry.entry_id}")
 
     @callback
@@ -285,7 +336,11 @@ class AlarmManager:
         if item is None:
             return
         _LOGGER.debug("Going off: %s", item.title())
-        if item.kind == KIND_ALARM:
+        if item.kind == KIND_ALARM and self.on_vacation(now):
+            _LOGGER.info("Vacation mode: not ringing %s", item.title())
+            if not item.recurring:
+                self.remove(sid)
+        elif item.kind == KIND_ALARM:
             # A one-time alarm stays listed (with its Stop button) until it
             # stops ringing; Ring removes it then.
             if not self._start_ring(sid, item) and not item.recurring:
@@ -305,6 +360,7 @@ class AlarmManager:
             (when, sid)
             for sid, when in self.next_fires.items()
             if self.items[sid].kind == kind
+            and not (kind == KIND_ALARM and self.on_vacation(when))
         ]
         if not found:
             return None

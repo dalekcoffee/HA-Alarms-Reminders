@@ -97,3 +97,10 @@ test:
           min: 5
           max: 600
           unit_of_measurement: s
+vacation_on:
+  fields:
+    end_date:
+      required: true
+      selector:
+        date:
+vacation_off:

@@ -63,4 +63,8 @@ class NextSensor(HubEntity, SensorEntity):
                 }
             )
         rows.sort(key=lambda r: (r["next"] is None, r["next"] or ""))
-        return {"items": rows, "count": len(rows)}
+        attrs: dict[str, Any] = {"items": rows, "count": len(rows)}
+        if self.kind == KIND_ALARM:
+            end = self.manager.vacation_end
+            attrs["vacation_until"] = end.isoformat() if end else None
+        return attrs

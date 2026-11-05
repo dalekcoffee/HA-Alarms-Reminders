@@ -39,6 +39,8 @@ OPT_NOTIFY_TARGETS = "notify_targets"
 OPT_NOTIFY_ALARMS = "notify_alarms"
 OPT_DEFAULT_SATELLITE = "default_satellite"
 OPT_SOUNDS = "sounds"  # {file name: display name}
+OPT_VACATION = "vacation"  # bool: alarms are off
+OPT_VACATION_END = "vacation_end"  # "YYYY-MM-DD", last day of vacation
 
 DEFAULT_RING_MINUTES = 10
 DEFAULT_SNOOZE_MINUTES = 9

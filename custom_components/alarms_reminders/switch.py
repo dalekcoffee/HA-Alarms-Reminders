@@ -1,4 +1,4 @@
-"""One switch per alarm or reminder: turn it on or off without deleting it."""
+"""One switch per alarm or reminder, and the vacation mode switch."""
 
 from __future__ import annotations
 
@@ -6,12 +6,13 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import KIND_ALARM, SIGNAL_NEW_ITEM
-from .entity import AlarmsEntity
+from .const import DOMAIN, KIND_ALARM, SIGNAL_NEW_ITEM
+from .entity import AlarmsEntity, HubEntity
 from .manager import AlarmManager
 
 
@@ -20,6 +21,7 @@ async def async_setup_entry(
 ) -> None:
     """Add a switch for each item, now and whenever one is added."""
     manager: AlarmManager = entry.runtime_data
+    async_add_entities([VacationSwitch(manager, "vacation")])
     for sid, sub in entry.subentries.items():
         if sid in manager.items or sub.subentry_type in ("alarm", "reminder"):
             async_add_entities([ItemSwitch(manager, sid)], config_subentry_id=sid)
@@ -99,3 +101,33 @@ class ItemSwitch(AlarmsEntity, SwitchEntity):
             return
         item.enabled = enabled
         self.manager.update(self.sid, item)
+
+
+class VacationSwitch(HubEntity, SwitchEntity):
+    """Vacation mode: alarms don't ring until the end of the Vacation ends date."""
+
+    _attr_icon = "mdi:palm-tree"
+
+    @property
+    def is_on(self) -> bool:
+        """On while vacation mode is on."""
+        return self.manager.vacation_end is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """When it ends."""
+        until = self.manager.vacation_until()
+        return {"ends": until.isoformat() if until else None}
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on, until the end of the date already set."""
+        end = self.manager.vacation_end_date
+        if end is None or end < dt_util.now().date():
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="vacation_needs_end"
+            )
+        self.manager.set_vacation(True, end)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off."""
+        self.manager.set_vacation(False)
