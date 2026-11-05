@@ -77,6 +77,14 @@ async def setup(hass: HomeAssistant, freezer):
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    # Sound lengths are read in the executor, which block_till_done doesn't
+    # always wait for; prime them so ringing starts deterministically.
+    from custom_components.alarms_reminders import sounds
+
+    for name in sounds.BUILT_IN:
+        entry.runtime_data._durations[name] = await hass.async_add_executor_job(
+            sounds.duration, hass, name
+        )
     return {
         "entry": entry,
         "device": device,
@@ -85,6 +93,10 @@ async def setup(hass: HomeAssistant, freezer):
         "light": light.entity_id,
         "calls": calls,
     }
+
+
+def _item_switches(hass):
+    return [s for s in hass.states.async_all("switch") if s.entity_id != "switch.alarms_reminders_vacation_mode"]
 
 
 async def _tool(hass, tool, device_id=None, **args):
@@ -119,7 +131,7 @@ async def test_one_time_vs_recurring(hass, setup):
 
     entry = setup["entry"]
     assert len(entry.subentries) == 2
-    switches = [s for s in hass.states.async_all("switch")]
+    switches = _item_switches(hass)
     assert len(switches) == 2
 
     listed = await _tool(hass, alarm_llm.ListTool(), kind="alarm")
@@ -218,7 +230,7 @@ async def test_change_and_cancel(hass, setup):
     await hass.async_block_till_done()
     assert cancelled["success"]
     assert not setup["entry"].subentries
-    assert not hass.states.async_all("switch")
+    assert not _item_switches(hass)
 
 
 async def test_ui_add_and_edit_alarm(hass, setup):
@@ -236,7 +248,7 @@ async def test_ui_add_and_edit_alarm(hass, setup):
     await hass.async_block_till_done()
     sid = next(iter(entry.subentries))
     assert entry.subentries[sid].title == "Alarm 6:45 AM, Monday and Wednesday – Swim"
-    assert hass.states.async_all("switch")
+    assert _item_switches(hass)
 
     result = await hass.config_entries.subentries.async_init(
         (entry.entry_id, "alarm"), context={"source": SOURCE_RECONFIGURE, "subentry_id": sid}
@@ -258,7 +270,7 @@ async def test_switch_turns_alarm_off(hass, setup):
     """Turning the switch off keeps it but stops it ringing."""
     await _tool(hass, alarm_llm.SetAlarmTool(), setup["device"].id, time="07:00", repeat="daily")
     await hass.async_block_till_done()
-    switch = hass.states.async_all("switch")[0].entity_id
+    switch = _item_switches(hass)[0].entity_id
     await hass.services.async_call("switch", "turn_off", {"entity_id": switch}, blocking=True)
     await hass.async_block_till_done()
     assert hass.states.get(switch).state == "off"
@@ -499,3 +511,79 @@ async def test_phones_default_to_every_app_phone(hass, setup, freezer):
     assert sent["message"].startswith("⏰ Alarm ringing")
     assert {a["title"] for a in sent["data"]["actions"]} == {"Stop", "Snooze"}
     await manager.async_stop_ringing()
+
+
+async def test_vacation_needs_end_date(hass, setup):
+    """Vacation mode won't turn on without an end date, by voice or switch."""
+    result = await _tool(hass, alarm_llm.VacationOnTool())
+    assert result["success"] is False
+    assert "end date" in result["speech"]
+    from homeassistant.exceptions import ServiceValidationError
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": "switch.alarms_reminders_vacation_mode"}, blocking=True
+        )
+    assert hass.states.get("switch.alarms_reminders_vacation_mode").state == "off"
+
+
+async def test_vacation_holds_alarms_not_reminders(hass, setup, freezer):
+    """Alarms stay quiet until midnight at the end of the end date; reminders still go off."""
+    manager = setup["entry"].runtime_data
+    await _tool(hass, alarm_llm.SetAlarmTool(), setup["device"].id, time="07:00", repeat="every day")
+    await _tool(hass, alarm_llm.SetAlarmTool(), setup["device"].id, time="08:00", date="2026-11-06")
+    await _tool(hass, alarm_llm.SetReminderTool(), setup["device"].id, message="water plants", time="09:00", date="2026-11-05")
+    await hass.async_block_till_done()
+
+    result = await _tool(hass, alarm_llm.VacationOnTool(), end_date="2026-11-06")
+    await hass.async_block_till_done()
+    assert result["speech"] == (
+        "Vacation mode is on until midnight at the end of Friday, November 6. "
+        "Alarms won't ring until then and start again Saturday, November 7. Reminders still go off."
+    )
+    assert hass.states.get("switch.alarms_reminders_vacation_mode").state == "on"
+    assert hass.states.get("date.alarms_reminders_vacation_ends").state == "2026-11-06"
+    nxt = hass.states.get("sensor.alarms_reminders_next_alarm").state
+    assert dt_util.parse_datetime(nxt).astimezone(dt_util.get_default_time_zone()).isoformat() == "2026-11-07T07:00:00-05:00"
+    assert "Vacation mode is on" in (await _tool(hass, alarm_llm.ListTool()))["speech"]
+
+    rang = []
+    hass.bus.async_listen(EVENT_RINGING, rang.append)
+    # Thursday: the reminder goes off, the daily alarm doesn't.
+    for hour in (7, 9):
+        freezer.move_to(datetime(2026, 11, 5, hour, 0, 1, tzinfo=dt_util.get_default_time_zone()))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+    assert not rang
+    assert setup["calls"]["notify"][-1].data["message"] == "water plants"
+    # Friday 8:00: the one-time alarm is dropped without ringing.
+    freezer.move_to(datetime(2026, 11, 6, 8, 0, 1, tzinfo=dt_util.get_default_time_zone()))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert not rang
+    assert len(manager.items) == 1
+    # Midnight: vacation ends by itself, and Saturday's alarm rings.
+    freezer.move_to(datetime(2026, 11, 7, 0, 0, 1, tzinfo=dt_util.get_default_time_zone()))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.alarms_reminders_vacation_mode").state == "off"
+    freezer.move_to(datetime(2026, 11, 7, 7, 0, 1, tzinfo=dt_util.get_default_time_zone()))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert len(rang) == 1
+    await manager.async_stop_ringing()
+
+
+async def test_vacation_off(hass, setup):
+    """Turning vacation mode off by voice."""
+    await _tool(hass, alarm_llm.VacationOnTool(), end_date="2026-11-10")
+    await hass.async_block_till_done()
+    result = await _tool(hass, alarm_llm.VacationOffTool())
+    await hass.async_block_till_done()
+    assert result["speech"] == "Vacation mode is off. Your alarms are back on."
+    assert hass.states.get("switch.alarms_reminders_vacation_mode").state == "off"
+    # The date stays, so the switch can turn it back on.
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.alarms_reminders_vacation_mode"}, blocking=True
+    )
+    assert hass.states.get("switch.alarms_reminders_vacation_mode").state == "on"

@@ -24,6 +24,7 @@ from .voice import async_setup_voice
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.DATE,
     Platform.SENSOR,
     Platform.SWITCH,
 ]
@@ -112,6 +113,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         await actions.stop(_manager(hass))
         return None
 
+    async def vacation_on(call: ServiceCall) -> ServiceResponse:
+        result = actions.vacation_on(_manager(hass), call.data["end_date"])
+        if not result["success"]:
+            raise ServiceValidationError(result["speech"])
+        return result
+
+    async def vacation_off(call: ServiceCall) -> ServiceResponse:
+        return actions.vacation_off(_manager(hass))
+
     async def snooze(call: ServiceCall) -> ServiceResponse:
         await actions.snooze(_manager(hass), call.data.get("minutes"))
         return None
@@ -150,6 +160,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         vol.Schema({vol.Required("entity_id"): cv.entity_ids, vol.Optional("seconds", default=30): vol.All(vol.Coerce(int), vol.Range(min=5, max=600))}),
     )
     hass.services.async_register(DOMAIN, "stop", stop)
+    hass.services.async_register(
+        DOMAIN, "vacation_on", vacation_on,
+        vol.Schema({vol.Required("end_date"): cv.string}),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN, "vacation_off", vacation_off, supports_response=SupportsResponse.OPTIONAL
+    )
     hass.services.async_register(
         DOMAIN, "snooze", snooze, vol.Schema({vol.Optional("minutes"): vol.Coerce(int)})
     )

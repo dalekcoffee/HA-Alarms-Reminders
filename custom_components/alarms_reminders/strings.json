@@ -235,6 +235,16 @@
       "next_reminder": {
         "name": "Next reminder"
       }
+    },
+    "switch": {
+      "vacation": {
+        "name": "Vacation mode"
+      }
+    },
+    "date": {
+      "vacation_end": {
+        "name": "Vacation ends"
+      }
     }
   },
   "services": {
@@ -355,6 +365,28 @@
           "description": "How long an alarm rings."
         }
       }
+    },
+    "vacation_on": {
+      "name": "Turn on vacation mode",
+      "description": "No alarms ring until midnight at the end of the end date. Reminders are not affected.",
+      "fields": {
+        "end_date": {
+          "name": "End date",
+          "description": "The last day of vacation. Alarms start again the day after."
+        }
+      }
+    },
+    "vacation_off": {
+      "name": "Turn off vacation mode",
+      "description": "Alarms ring again."
+    }
+  },
+  "exceptions": {
+    "vacation_needs_end": {
+      "message": "Set Vacation ends to today or a later date first. Vacation mode lasts until midnight at the end of that day."
+    },
+    "vacation_end_passed": {
+      "message": "That date has already passed."
     }
   }
 }
