@@ -166,9 +166,23 @@ class AlarmManager:
         elif action == PHONE_SNOOZE:
             await self.async_snooze()
 
+    def phone_targets(self) -> list[str]:
+        """Phones picked in the settings, or every Home Assistant app phone if none are."""
+        picked = list(self.opt(OPT_NOTIFY_TARGETS, []))
+        if picked:
+            return picked
+        return sorted(
+            f"notify.{name}"
+            for name in self.hass.services.async_services_for_domain("notify")
+            if name.startswith("mobile_app_")
+        )
+
     async def async_phone(self, message: str, data: dict[str, Any]) -> None:
-        """Send to every phone picked in the settings."""
-        for target in self.opt(OPT_NOTIFY_TARGETS, []):
+        """Send to every phone."""
+        targets = self.phone_targets()
+        if not targets:
+            _LOGGER.warning("No phone to notify: add the Home Assistant app on your phone")
+        for target in targets:
             try:
                 await self.hass.services.async_call(
                     "notify",
@@ -483,7 +497,7 @@ class AlarmManager:
             EVENT_REMINDER, {"id": sid, "message": item.message, "satellite": item.satellite}
         )
         if item.notify_phone:
-            for target in self.opt(OPT_NOTIFY_TARGETS, []):
+            for target in self.phone_targets():
                 service = target.removeprefix("notify.")
                 try:
                     await self.hass.services.async_call(
@@ -550,6 +564,20 @@ class AlarmManager:
             )
         else:
             raise HomeAssistantError("This alarm has no speaker")
+
+
+def action_buttons(hass: HomeAssistant, satellite: str) -> list[str]:
+    """Action-button event entities on a voice device (EchoLocal's Echo Dot has one)."""
+    reg = er.async_get(hass)
+    entry = reg.async_get(satellite)
+    if entry is None or entry.device_id is None:
+        return []
+    return [
+        ent.entity_id
+        for ent in er.async_entries_for_device(reg, entry.device_id)
+        if ent.domain == "event"
+        and "action" in f"{ent.entity_id} {ent.original_name or ''} {ent.translation_key or ''}".lower()
+    ]
 
 
 class Ring:
@@ -625,7 +653,7 @@ class Ring:
         if reason != "snoozed":
             self.manager.last_stopped = monotonic_time.monotonic()
         _LOGGER.debug("Alarm %s ended: %s", self.item.title(), reason)
-        if self.manager.opt(OPT_NOTIFY_ALARMS, True) and self.manager.opt(OPT_NOTIFY_TARGETS, []):
+        if self.manager.opt(OPT_NOTIFY_ALARMS, True) and self.manager.phone_targets():
             self.hass.async_create_task(
                 self.manager.async_phone("clear_notification", {"tag": self.tag})
             )
@@ -689,6 +717,10 @@ class Ring:
                 except HomeAssistantError as err:
                     _LOGGER.warning("Alarm sound failed on %s: %s", self.key, err)
                 played = monotonic_time.monotonic() - began
+                _LOGGER.debug(
+                    "Alarm %s: sound played for %.1f s (file is %s s)",
+                    item.title(), played, f"{length:.1f}" if length else "unknown",
+                )
                 if played < 1:
                     await asyncio.sleep(5)  # failed or returned at once; don't spin
                     continue
@@ -741,20 +773,36 @@ class Ring:
         )
 
     def _watch_satellite(self) -> None:
-        """Stop when the device starts listening (wake word or action button)."""
+        """Stop when the device starts listening, or its action button is pressed."""
         satellite = self.item.satellite
         if not satellite:
             return
+        buttons = action_buttons(self.hass, satellite)
 
         @callback
         def _changed(event: Event[EventStateChangedData]) -> None:
             new = event.data["new_state"]
-            if new is None or new.state not in INTERRUPT_STATES or self._stopping:
+            if new is None or self._stopping or new.state in ("unknown", "unavailable"):
                 return
-            _LOGGER.debug("%s started listening; stopping the alarm", satellite)
-            self.hass.async_create_task(self.async_stop(reason="dismissed"))
+            if new.entity_id in buttons:
+                old = event.data["old_state"]
+                if old is None or old.state == new.state:
+                    return  # not a new press
+                kind = new.attributes.get("event_type")
+                _LOGGER.debug("%s: %s; stopping the alarm", new.entity_id, kind)
+                if kind == "hold":
+                    self.hass.async_create_task(self.manager.async_snooze())
+                else:
+                    self.hass.async_create_task(self.async_stop(reason="dismissed"))
+                return
+            if new.state in INTERRUPT_STATES:
+                _LOGGER.debug("%s started listening; stopping the alarm", satellite)
+                self.hass.async_create_task(self.async_stop(reason="dismissed"))
 
-        self._unsub_state = async_track_state_change_event(self.hass, [satellite], _changed)
+        _LOGGER.debug("Alarm %s: watching %s for a stop", self.item.title(), [satellite, *buttons])
+        self._unsub_state = async_track_state_change_event(
+            self.hass, [satellite, *buttons], _changed
+        )
 
     def _side(self, coro: Any) -> None:
         self._side_tasks.append(
