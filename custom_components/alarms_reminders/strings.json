@@ -38,7 +38,11 @@
           "brightness": "Wake-up brightness",
           "kelvin": "Wake-up light colour",
           "notify_targets": "Phones",
-          "notify_alarms": "Send ringing alarms to phones"
+          "notify_alarms": "Send ringing alarms to phones",
+          "heads_up": "Heads-up on the phone before alarms",
+          "heads_up_minutes": "Heads-up how early",
+          "heads_up_follow_up_only": "Only after I've stopped an alarm",
+          "heads_up_window_minutes": "…for alarms within"
         },
         "data_description": {
           "default_satellite": "Used when an alarm is set from a dashboard or the Assist dialog instead of a voice device.",
@@ -47,7 +51,10 @@
           "wake_lights": "Leave empty to use the lights in the same room as the voice device.",
           "light_ramp_minutes": "Wake-up lights go from 1% to full brightness over this time. 0 = straight on.",
           "notify_targets": "Home Assistant app notify actions, e.g. notify.mobile_app_pixel. Used for reminders and ringing alarms. Leave empty to use every phone with the Home Assistant app.",
-          "notify_alarms": "Shows a notification with Stop and Snooze buttons on the phones below while an alarm rings."
+          "notify_alarms": "Shows a notification with Stop and Snooze buttons on the phones below while an alarm rings.",
+          "heads_up": "The phones get \"Alarm coming up\" with Dismiss and Snooze before the alarm rings. Dismiss skips that alarm, Snooze moves it to the snooze time after it. No answer = it rings as usual.",
+          "heads_up_follow_up_only": "On: only alarms that come soon after you stopped one get a heads-up (you're probably awake). Off: every alarm gets one.",
+          "heads_up_window_minutes": "How soon after you last stopped or dismissed an alarm. Each stop or dismiss starts this again."
         }
       },
       "add_sound_file": {
@@ -111,7 +118,8 @@
             "label": "Label",
             "sound": "Sound",
             "wake": "Wake-up alarm",
-            "lights": "Lights"
+            "lights": "Lights",
+            "always_ring": "Always ring"
           },
           "data_description": {
             "repeat": "Pick days to make it recurring. Leave empty for one time.",
@@ -120,7 +128,8 @@
             "skip_next": "Skips one day without deleting it. Skipped days: {skipped}",
             "sound": "Leave empty to use the default sound from the integration settings.",
             "wake": "Volume and lights ease up gradually.",
-            "lights": "Lights to turn on. Leave empty to use your wake-up lights (or the lights in the device's room) for wake-up alarms."
+            "lights": "Lights to turn on. Leave empty to use your wake-up lights (or the lights in the device's room) for wake-up alarms.",
+            "always_ring": "Never send a heads-up for this alarm first."
           }
         },
         "reconfigure": {
@@ -136,7 +145,8 @@
             "label": "Label",
             "sound": "Sound",
             "wake": "Wake-up alarm",
-            "lights": "Lights"
+            "lights": "Lights",
+            "always_ring": "Always ring"
           },
           "data_description": {
             "repeat": "Pick days to make it recurring. Leave empty for one time.",
@@ -145,7 +155,8 @@
             "skip_next": "Skips one day without deleting it. Skipped days: {skipped}",
             "sound": "Leave empty to use the default sound from the integration settings.",
             "wake": "Volume and lights ease up gradually.",
-            "lights": "Lights to turn on. Leave empty to use your wake-up lights (or the lights in the device's room) for wake-up alarms."
+            "lights": "Lights to turn on. Leave empty to use your wake-up lights (or the lights in the device's room) for wake-up alarms.",
+            "always_ring": "Never send a heads-up for this alarm first."
           }
         }
       },

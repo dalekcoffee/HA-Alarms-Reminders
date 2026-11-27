@@ -14,6 +14,7 @@ from datetime import date, datetime, time, timedelta, tzinfo
 from typing import Any
 
 from .const import (
+    CONF_ALWAYS_RING,
     CONF_DATE,
     CONF_ENABLED,
     CONF_LABEL,
@@ -193,6 +194,7 @@ class Item:
     skip: list[date] = field(default_factory=list)
     notify_phone: bool = True
     snooze: bool = False
+    always_ring: bool = False
 
     @property
     def recurring(self) -> bool:
@@ -219,6 +221,7 @@ class Item:
             skip=[parse_date(d) for d in data.get(CONF_SKIP) or []],
             notify_phone=bool(data.get(CONF_NOTIFY, True)),
             snooze=bool(data.get(CONF_SNOOZE, False)),
+            always_ring=bool(data.get(CONF_ALWAYS_RING, False)),
         )
 
     def to_data(self) -> dict[str, Any]:
@@ -240,6 +243,7 @@ class Item:
                     CONF_WAKE: self.wake,
                     CONF_LIGHTS: list(self.lights),
                     CONF_SNOOZE: self.snooze,
+                    CONF_ALWAYS_RING: self.always_ring,
                 }
             )
         else:

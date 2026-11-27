@@ -35,6 +35,8 @@ from homeassistant.util import dt as dt_util
 from . import sounds
 from .const import (
     DEFAULT_BRIGHTNESS,
+    DEFAULT_HEADS_UP_MINUTES,
+    DEFAULT_HEADS_UP_WINDOW,
     DEFAULT_KELVIN,
     DEFAULT_LIGHT_RAMP_MINUTES,
     DEFAULT_RAMP_MINUTES,
@@ -45,6 +47,7 @@ from .const import (
     DEFAULT_VOLUME,
     EVENT_REMINDER,
     EVENT_RINGING,
+    EVENT_SKIPPED,
     EVENT_STOPPED,
     KIND_ALARM,
     KIND_REMINDER,
@@ -52,6 +55,10 @@ from .const import (
     OPT_BRIGHTNESS,
     OPT_DEFAULT_SATELLITE,
     OPT_DEFAULT_SOUND,
+    OPT_HEADS_UP,
+    OPT_HEADS_UP_FOLLOW_UP,
+    OPT_HEADS_UP_MINUTES,
+    OPT_HEADS_UP_WINDOW,
     OPT_KELVIN,
     OPT_LIGHT_RAMP_MINUTES,
     OPT_NOTIFY_ALARMS,
@@ -80,6 +87,11 @@ JUST_STOPPED_SECONDS = 20
 INTERRUPT_STATES = {"listening", "processing"}
 PHONE_STOP = "ALARMS_REMINDERS_STOP"
 PHONE_SNOOZE = "ALARMS_REMINDERS_SNOOZE"
+# Heads-up buttons end with the alarm's id.
+PHONE_EARLY_STOP = "ALARMS_REMINDERS_EARLY_STOP_"
+PHONE_EARLY_SNOOZE = "ALARMS_REMINDERS_EARLY_SNOOZE_"
+# Ring endings that mean someone stopped it (not a snooze, not ringing out).
+REAL_STOPS = {"stopped", "dismissed"}
 LIGHT_STEP_SECONDS = 30
 
 
@@ -109,6 +121,12 @@ class AlarmManager:
         self.last_stopped = -1e9
         self._unsub_phone: CALLBACK_TYPE | None = None
         self._durations: dict[str, float | None] = {}
+        # Heads-up: when someone last stopped an alarm, when each alarm's
+        # heads-up is due, which are waiting for an answer, and which went out.
+        self.last_dismissed: datetime | None = None
+        self.heads_up_times: dict[str, datetime] = {}
+        self.heads_up_pending: dict[str, datetime] = {}
+        self._heads_up_sent: set[tuple[str, datetime]] = set()
 
     # --- lifecycle --------------------------------------------------------
 
@@ -162,11 +180,15 @@ class AlarmManager:
             ring.cancel()
 
     async def _on_phone_action(self, event: Event) -> None:
-        action = event.data.get("action")
+        action = str(event.data.get("action") or "")
         if action == PHONE_STOP:
             await self.async_stop_ringing()
         elif action == PHONE_SNOOZE:
             await self.async_snooze()
+        elif action.startswith(PHONE_EARLY_STOP):
+            await self.async_skip_upcoming(action.removeprefix(PHONE_EARLY_STOP))
+        elif action.startswith(PHONE_EARLY_SNOOZE):
+            await self.async_skip_upcoming(action.removeprefix(PHONE_EARLY_SNOOZE), snooze=True)
 
     def phone_targets(self) -> list[str]:
         """Phones picked in the settings, or every Home Assistant app phone if none are."""
@@ -316,14 +338,32 @@ class AlarmManager:
                 when = item.next_fire(until - timedelta(microseconds=1), tz)
             if when is not None:
                 self.next_fires[sid] = when
+        self.heads_up_times = {}
+        if self.opt(OPT_HEADS_UP, True):
+            lead = self.heads_up_lead()
+            for sid, when in self.next_fires.items():
+                item = self.items[sid]
+                if item.kind == KIND_ALARM and not item.snooze and not item.always_ring:
+                    self.heads_up_times[sid] = when - lead
+        self._heads_up_sent = {k for k in self._heads_up_sent if k[1] > now - timedelta(days=1)}
         wakes = list(self.next_fires.values()) + ([until] if until else [])
+        # Only heads-ups that would go out; a later stop reschedules.
+        wakes += [
+            at
+            for sid, at in self.heads_up_times.items()
+            if at > now
+            and (sid, self.next_fires[sid]) not in self._heads_up_sent
+            and self.wants_heads_up(sid, self.next_fires[sid])
+        ]
         if wakes:
             self._unsub_timer = async_track_point_in_time(self.hass, self._on_timer, min(wakes))
+        self._heads_up_catch_up(now)
         async_dispatcher_send(self.hass, f"{SIGNAL_UPDATED}_{self.entry.entry_id}")
 
     @callback
     def _on_timer(self, now: datetime) -> None:
         self._unsub_timer = None
+        self._heads_up_catch_up(now + timedelta(seconds=1))
         due = [sid for sid, when in self.next_fires.items() if when <= now + timedelta(seconds=1)]
         fire_time = max([now, *(self.next_fires[sid] for sid in due)])
         for sid in due:
@@ -336,6 +376,16 @@ class AlarmManager:
         if item is None:
             return
         _LOGGER.debug("Going off: %s", item.title())
+        sent_heads_up = self.heads_up_pending.pop(sid, None) is not None
+        if item.kind == KIND_ALARM and item.recurring and dt_util.as_local(now).date() in item.skip:
+            # Dismissed from the heads-up a moment ago; the reschedule hasn't run yet.
+            _LOGGER.debug("Skipped today: %s", item.title())
+            return
+        if sent_heads_up and not self.opt(OPT_NOTIFY_ALARMS, True):
+            # The ringing notification would replace the heads-up; without it, clear it.
+            self.hass.async_create_task(
+                self.async_phone("clear_notification", {"tag": phone_tag(sid)})
+            )
         if item.kind == KIND_ALARM and self.on_vacation(now):
             _LOGGER.info("Vacation mode: not ringing %s", item.title())
             if not item.recurring:
@@ -353,6 +403,123 @@ class AlarmManager:
                 self.remove(sid)
         if item.recurring and prune_skips(item, now.date()):
             self._save(sid, item)
+
+    # --- heads-up -----------------------------------------------------------
+
+    def heads_up_lead(self) -> timedelta:
+        """How long before an alarm its heads-up goes to the phones."""
+        return timedelta(minutes=float(self.opt(OPT_HEADS_UP_MINUTES, DEFAULT_HEADS_UP_MINUTES)))
+
+    @callback
+    def note_dismissed(self) -> None:
+        """Someone stopped an alarm: alarms soon after it get a heads-up first."""
+        self.last_dismissed = dt_util.utcnow()
+        self._schedule(dt_util.now())
+
+    def wants_heads_up(self, sid: str, fire: datetime) -> bool:
+        """Whether this alarm should send a heads-up now."""
+        item = self.items.get(sid)
+        if (
+            item is None
+            or not self.opt(OPT_HEADS_UP, True)
+            or item.kind != KIND_ALARM
+            or item.snooze
+            or item.always_ring
+            or self.on_vacation(fire)
+            or not self.phone_targets()
+        ):
+            return False
+        if not self.opt(OPT_HEADS_UP_FOLLOW_UP, True):
+            return True
+        window = timedelta(minutes=float(self.opt(OPT_HEADS_UP_WINDOW, DEFAULT_HEADS_UP_WINDOW)))
+        return self.last_dismissed is not None and fire - self.last_dismissed <= window
+
+    @callback
+    def _heads_up_catch_up(self, now: datetime) -> None:
+        """Send every heads-up that is due by now and hasn't gone out."""
+        for sid, at in list(self.heads_up_times.items()):
+            fire = self.next_fires.get(sid)
+            if fire is None or not at <= now < fire or (sid, fire) in self._heads_up_sent:
+                continue
+            if not self.wants_heads_up(sid, fire):
+                continue
+            self._heads_up_sent.add((sid, fire))
+            self.heads_up_pending[sid] = fire
+            self.hass.async_create_background_task(
+                self._send_heads_up(sid, fire), f"alarm heads-up {sid}"
+            )
+
+    async def _send_heads_up(self, sid: str, fire: datetime) -> None:
+        item = self.items.get(sid)
+        if item is None:
+            return
+        left = (fire - dt_util.now()).total_seconds()
+        text = f"{say_time(item.at)} alarm in {max(1, round(left / 60))} min"
+        if item.label:
+            text += f" – {item.label}"
+        if place := self.placement_for_satellite(item.satellite).area_name:
+            text += f" ({place})"
+        _LOGGER.debug("Heads-up for %s", item.title())
+        await self.async_phone(
+            f"⏰ {text}. Dismiss it now, or it rings as usual.",
+            {
+                "title": "Alarm coming up",
+                "tag": phone_tag(sid),
+                "actions": [
+                    {"action": PHONE_EARLY_STOP + sid, "title": "Dismiss"},
+                    {"action": PHONE_EARLY_SNOOZE + sid, "title": "Snooze"},
+                ],
+                "priority": "high",
+                "ttl": 0,
+                "channel": "Alarm heads-up",
+                "importance": "high",
+                # Android: gone a minute after the alarm time if nothing replaced it.
+                "timeout": max(60, int(left) + 60),
+                "push": {"interruption-level": "time-sensitive"},
+            },
+        )
+
+    async def async_skip_upcoming(self, sid: str, snooze: bool = False) -> bool:
+        """Dismiss (or snooze) an alarm from its heads-up, before it rings."""
+        if any(not ring.done and ring.sid == sid for ring in self.rings.values()):
+            # Too late: it's ringing, so the buttons work as they do on the alarm.
+            if snooze:
+                await self.async_snooze()
+            else:
+                await self.async_stop_item(sid)
+            return True
+        fire = self.heads_up_pending.pop(sid, None)
+        item = self.items.get(sid)
+        if fire is None or item is None:
+            _LOGGER.debug("Heads-up answer for %s is stale; ignoring it", sid)
+            return False
+        snoozed_until = None
+        if snooze:
+            minutes = int(self.opt(OPT_SNOOZE_MINUTES, DEFAULT_SNOOZE_MINUTES))
+            snoozed_until = fire + timedelta(minutes=minutes)
+        else:
+            self.last_dismissed = dt_util.utcnow()
+        _LOGGER.debug("%s %s from the heads-up", item.title(), "snoozed" if snooze else "dismissed")
+        if item.recurring:
+            item.skip.append(dt_util.as_local(fire).date())
+            self._save(sid, item)
+        else:
+            self.remove(sid)
+        if snoozed_until is not None:
+            self._add_snooze(item, snoozed_until)
+        self.hass.bus.async_fire(
+            EVENT_SKIPPED,
+            {
+                "id": sid,
+                "label": item.label,
+                "satellite": item.satellite,
+                "time": fire.isoformat(),
+                "snoozed_until": snoozed_until.isoformat() if snoozed_until else None,
+            },
+        )
+        self._schedule(dt_util.now())
+        await self.async_phone("clear_notification", {"tag": phone_tag(sid)})
+        return True
 
     def next_alarm(self, kind: str) -> tuple[str, datetime] | None:
         """The next item of a kind to go off."""
@@ -528,18 +695,24 @@ class AlarmManager:
         when = when.replace(second=0, microsecond=0)
         for ring in rings:
             await ring.async_stop(snoozed=True)
-            again = Item(
+            self._add_snooze(ring.item, when)
+        return when
+
+    def _add_snooze(self, item: Item, when: datetime) -> None:
+        """A one-time alarm that rings again at `when`."""
+        when = dt_util.as_local(when)
+        self.add(
+            Item(
                 kind=KIND_ALARM,
-                at=when.time(),
+                at=when.time().replace(second=0, microsecond=0),
                 on=when.date(),
-                label=ring.item.label,
-                satellite=ring.item.satellite,
-                media_player=ring.item.media_player,
-                sound=ring.item.sound,
+                label=item.label,
+                satellite=item.satellite,
+                media_player=item.media_player,
+                sound=item.sound,
                 snooze=True,
             )
-            self.add(again)
-        return when
+        )
 
     def sound_media_id(self, item: Item) -> str:
         """Media ID of an alarm's sound."""
@@ -620,6 +793,11 @@ class AlarmManager:
             )
         else:
             raise HomeAssistantError("This alarm has no speaker")
+
+
+def phone_tag(sid: str) -> str:
+    """Phone notification tag of an alarm (its heads-up and its ringing share it)."""
+    return f"alarms_reminders_{sid}"
 
 
 def action_buttons(hass: HomeAssistant, satellite: str) -> list[str]:
@@ -708,6 +886,8 @@ class Ring:
             self._unsub_state = None
         if reason != "snoozed":
             self.manager.last_stopped = monotonic_time.monotonic()
+        if reason in REAL_STOPS and not self.test:
+            self.manager.note_dismissed()
         _LOGGER.debug("Alarm %s ended: %s", self.item.title(), reason)
         if self.manager.opt(OPT_NOTIFY_ALARMS, True) and self.manager.phone_targets():
             self.hass.async_create_task(
@@ -799,7 +979,7 @@ class Ring:
     @property
     def tag(self) -> str:
         """Phone notification tag."""
-        return f"alarms_reminders_{self.sid}"
+        return phone_tag(self.sid)
 
     async def _notify_phone(self) -> None:
         item = self.item

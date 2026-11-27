@@ -8,6 +8,7 @@ Voice alarms and reminders for Assist voice devices (ESPHome satellites, Voice P
 - **Skip without deleting:** "Skip tomorrow's alarm".
 - **Vacation mode:** "Turn on vacation mode until Sunday" keeps every alarm quiet until midnight at the end of that day. Reminders still go off. An end date is required.
 - **Stop and snooze:** say "stop" on the device, press its action button, say the wake word, tap **Stop** on the alarm in Home Assistant, or tap **Stop** on the phone notification. "Okay Nabu, snooze" snoozes. It stops by itself after 10 minutes.
+- **Heads-up before follow-up alarms:** once you've stopped an alarm, any alarm within the next hour first sends your phones "Alarm coming up" 5 minutes early, with **Dismiss** and **Snooze**. Dismiss skips that alarm, Snooze moves it to 9 minutes after its time. No answer and it rings as usual, so you're covered if you fell back asleep.
 - **Your own sounds:** a built-in car-alarm siren, beeps and a chime, plus any audio file you upload or link.
 
 Everything runs locally in Home Assistant. Alarms are stored by Home Assistant itself, so they survive restarts.
@@ -45,6 +46,10 @@ Open the integration and click **Configure › Settings**:
 | Wake-up light ramp / brightness / colour | 10 min, 100%, 6500 K | Lights go from 1% to full, white. |
 | Phones | every app phone | Pick your `notify.mobile_app_…` actions from the Home Assistant app. Leave empty to use every phone with the app. Reminders are sent here. |
 | Send ringing alarms to phones | on | While an alarm rings, the phones get a notification with **Stop** and **Snooze**. It clears when the alarm ends. |
+| Heads-up on the phone before alarms | on | Sends "Alarm coming up" with **Dismiss** and **Snooze** before an alarm rings. No answer = it rings as usual. Snooze alarms never get one, and an alarm with **Always ring** on never does either. |
+| Heads-up how early | 5 min | |
+| Only after I've stopped an alarm | on | Only alarms soon after you stopped (or dismissed) one get a heads-up. Turn off to get one before every alarm. A snooze or an alarm that rang out doesn't count as a stop. |
+| …for alarms within | 60 min | Counted from your last stop or dismiss, so each one starts it again. |
 
 ### Sounds
 
@@ -110,7 +115,7 @@ To turn alarms on and off from the dashboard, add an **Entities** card with thei
 
 ### Automations
 
-Events you can trigger on: `alarms_reminders_ringing`, `alarms_reminders_stopped` (with `reason`: stopped, snoozed, dismissed or timeout; dismissed means it was stopped on the device) and `alarms_reminders_reminder`. Actions: `alarms_reminders.set_alarm`, `set_reminder`, `skip_next`, `delete`, `list`, `stop`, `snooze`, `vacation_on` (with `end_date`), `vacation_off`.
+Events you can trigger on: `alarms_reminders_ringing`, `alarms_reminders_stopped` (with `reason`: stopped, snoozed, dismissed or timeout; dismissed means it was stopped on the device) `alarms_reminders_reminder`, and `alarms_reminders_skipped` (an alarm dismissed or snoozed from its heads-up; `snoozed_until` is set for a snooze). Actions: `alarms_reminders.set_alarm`, `set_reminder`, `skip_next`, `delete`, `list`, `stop`, `snooze`, `vacation_on` (with `end_date`), `vacation_off`.
 
 ## Good to know
 
@@ -118,5 +123,6 @@ Events you can trigger on: `alarms_reminders_ringing`, `alarms_reminders_stopped
 - **Echo Dot action button:** a tap stops the alarm and a hold snoozes it. The integration watches the Dot's **Action button** event entity, so this works even when the Dot doesn't report the stop itself.
 - **Troubleshooting a stop:** turn on **Enable debug logging** on the integration page, ring a test alarm and stop it. The log shows how long each play took and which entities were watched.
 - **Phone actions:** the Stop and Snooze buttons on the notification need the Home Assistant companion app. On Android the notification uses an "Alarms" channel with high importance.
+- **Heads-up delivery:** the heads-up uses high priority on Android and time-sensitive on iOS. If it arrives late or not at all, the alarm simply rings. Tapping Dismiss after the alarm has started stops it like the alarm's own Stop. On Android the heads-up uses an "Alarm heads-up" channel and the ringing notification replaces it.
 - **Missed alarms:** a one-time alarm that should have rung while Home Assistant was off still rings if it's no more than 10 minutes late. Otherwise it's removed and logged.
 - **Cloud lights** (like Govee cloud) update every 30 seconds during the ramp, so they stay within rate limits.

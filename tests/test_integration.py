@@ -587,3 +587,143 @@ async def test_vacation_off(hass, setup):
         "switch", "turn_on", {"entity_id": "switch.alarms_reminders_vacation_mode"}, blocking=True
     )
     assert hass.states.get("switch.alarms_reminders_vacation_mode").state == "on"
+
+
+# --- heads-up before alarms ---------------------------------------------------
+
+
+def _local(hour, minute, second=0, day=4):
+    return datetime(2026, 11, day, hour, minute, second, tzinfo=dt_util.get_default_time_zone())
+
+
+async def _at(hass, freezer, when):
+    freezer.move_to(when)
+    async_fire_time_changed(hass)
+    for _ in range(3):
+        await hass.async_block_till_done()
+
+
+def _heads_ups(setup):
+    return [c for c in setup["calls"]["notify"] if c.data.get("data", {}).get("title") == "Alarm coming up"]
+
+
+def _add_alarm(setup, hour, minute, **kwargs):
+    from custom_components.alarms_reminders.const import KIND_ALARM
+    from custom_components.alarms_reminders.model import Item
+
+    manager = setup["entry"].runtime_data
+    kwargs.setdefault("on", _local(hour, minute).date())
+    item = Item(kind=KIND_ALARM, at=_local(hour, minute).time(), satellite=setup["satellite"], media_player=setup["player"], **kwargs)
+    return manager.add(item)
+
+
+async def _answer(hass, action):
+    hass.bus.async_fire("mobile_app_notification_action", {"action": action})
+    for _ in range(3):
+        await hass.async_block_till_done()
+
+
+async def test_heads_up_dismiss_skips_follow_up_alarm(hass, setup, freezer):
+    """After stopping an alarm, the next one within the hour asks first; Dismiss skips it."""
+    manager = setup["entry"].runtime_data
+    _add_alarm(setup, 22, 1)
+    later = _add_alarm(setup, 22, 20)
+    await hass.async_block_till_done()
+    ringing = []
+    skipped = []
+    hass.bus.async_listen(EVENT_RINGING, ringing.append)
+    hass.bus.async_listen("alarms_reminders_skipped", skipped.append)
+
+    await _at(hass, freezer, _local(22, 1, 1))
+    assert manager.ringing
+    await manager.async_stop_ringing()
+    await hass.async_block_till_done()
+    assert not _heads_ups(setup)  # 22:20 is more than 5 minutes away
+
+    await _at(hass, freezer, _local(22, 15, 1))
+    heads_up = _heads_ups(setup)
+    assert len(heads_up) == 1
+    assert heads_up[0].data["data"]["tag"] == f"alarms_reminders_{later}"
+    actions = {a["title"]: a["action"] for a in heads_up[0].data["data"]["actions"]}
+    assert set(actions) == {"Dismiss", "Snooze"}
+
+    await _answer(hass, actions["Dismiss"])
+    assert later not in setup["entry"].subentries
+    assert skipped and skipped[0].data["id"] == later
+    await _at(hass, freezer, _local(22, 20, 1))
+    assert len(ringing) == 1  # only the first alarm rang
+    assert not manager.ringing
+
+
+async def test_heads_up_unanswered_rings_as_usual(hass, setup, freezer):
+    """No answer: the alarm rings on time and its Stop works."""
+    manager = setup["entry"].runtime_data
+    _add_alarm(setup, 22, 1)
+    later = _add_alarm(setup, 22, 20)
+    await _at(hass, freezer, _local(22, 1, 1))
+    await manager.async_stop_ringing()
+    await _at(hass, freezer, _local(22, 15, 1))
+    assert len(_heads_ups(setup)) == 1
+    await _at(hass, freezer, _local(22, 20, 1))
+    assert manager.ringing
+    assert any(ring.sid == later for ring in manager.rings.values())
+    # A late tap on the heads-up's Dismiss stops it like the alarm's own Stop.
+    await _answer(hass, f"ALARMS_REMINDERS_EARLY_STOP_{later}")
+    assert not manager.ringing
+
+
+async def test_no_heads_up_without_a_stop_first(hass, setup, freezer):
+    """By default only follow-up alarms get a heads-up; a timed-out ring doesn't count."""
+    manager = setup["entry"].runtime_data
+    _add_alarm(setup, 22, 20)
+    await _at(hass, freezer, _local(22, 15, 1))
+    assert not _heads_ups(setup)
+    await _at(hass, freezer, _local(22, 20, 1))
+    assert manager.ringing
+    await manager.async_snooze()  # a snooze isn't a stop either
+    await hass.async_block_till_done()
+    assert manager.last_dismissed is None
+    await _at(hass, freezer, _local(22, 29, 1))
+    assert manager.ringing  # the snooze re-ring never asks first
+    assert not _heads_ups(setup)
+    await manager.async_stop_ringing()
+
+
+async def test_heads_up_every_alarm_and_snooze(hass, setup, freezer):
+    """With 'only after a stop' off, every alarm asks; Snooze skips today and rings 9 min after."""
+    from custom_components.alarms_reminders.const import OPT_HEADS_UP_FOLLOW_UP
+
+    entry = setup["entry"]
+    hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_HEADS_UP_FOLLOW_UP: False})
+    await hass.async_block_till_done()
+    manager = entry.runtime_data
+    sid = _add_alarm(setup, 22, 30, repeat=[0, 1, 2, 3, 4, 5, 6], on=None)
+    await _at(hass, freezer, _local(22, 25, 1))
+    assert len(_heads_ups(setup)) == 1
+    await _answer(hass, f"ALARMS_REMINDERS_EARLY_SNOOZE_{sid}")
+    item = manager.items[sid]
+    assert _local(22, 30).date() in item.skip
+    snoozes = [i for i in manager.items.values() if i.snooze]
+    assert len(snoozes) == 1 and snoozes[0].at.strftime("%H:%M") == "22:39"
+    await _at(hass, freezer, _local(22, 30, 1))
+    assert not manager.ringing
+    await _at(hass, freezer, _local(22, 39, 1))
+    assert manager.ringing
+    await manager.async_stop_ringing()
+    # Tomorrow's is still on.
+    assert manager.next_fires[sid] == _local(22, 30, day=5)
+
+
+async def test_heads_up_sent_at_once_when_stop_is_close(hass, setup, freezer):
+    """An alarm under 5 minutes after a stop gets its heads-up straight away."""
+    manager = setup["entry"].runtime_data
+    _add_alarm(setup, 22, 1)
+    _add_alarm(setup, 22, 4)
+    always = _add_alarm(setup, 22, 5, always_ring=True)
+    await _at(hass, freezer, _local(22, 1, 1))
+    await manager.async_stop_ringing()
+    for _ in range(3):
+        await hass.async_block_till_done()
+    heads_up = _heads_ups(setup)
+    assert len(heads_up) == 1
+    assert always not in heads_up[0].data["data"]["tag"]
