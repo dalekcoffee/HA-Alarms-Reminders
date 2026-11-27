@@ -23,6 +23,7 @@ CONF_ENABLED = "enabled"
 CONF_SKIP = "skip_dates"
 CONF_NOTIFY = "notify_phone"
 CONF_SNOOZE = "snooze"
+CONF_ALWAYS_RING = "always_ring"  # never send a heads-up first
 
 # Options (integration-wide settings)
 OPT_DEFAULT_SOUND = "default_sound"
@@ -41,6 +42,10 @@ OPT_DEFAULT_SATELLITE = "default_satellite"
 OPT_SOUNDS = "sounds"  # {file name: display name}
 OPT_VACATION = "vacation"  # bool: alarms are off
 OPT_VACATION_END = "vacation_end"  # "YYYY-MM-DD", last day of vacation
+OPT_HEADS_UP = "heads_up"  # bool: phone heads-up before alarms
+OPT_HEADS_UP_MINUTES = "heads_up_minutes"
+OPT_HEADS_UP_FOLLOW_UP = "heads_up_follow_up_only"  # only after an alarm was stopped
+OPT_HEADS_UP_WINDOW = "heads_up_window_minutes"
 
 DEFAULT_RING_MINUTES = 10
 DEFAULT_SNOOZE_MINUTES = 9
@@ -51,6 +56,8 @@ DEFAULT_LIGHT_RAMP_MINUTES = 10
 DEFAULT_BRIGHTNESS = 100
 DEFAULT_KELVIN = 6500
 DEFAULT_SOUND = "car_alarm.wav"
+DEFAULT_HEADS_UP_MINUTES = 5
+DEFAULT_HEADS_UP_WINDOW = 60
 
 # One-time alarms missed while Home Assistant was down still ring if they
 # are at most this late.
@@ -64,3 +71,4 @@ SIGNAL_NEW_ITEM = f"{DOMAIN}_new_item"
 EVENT_RINGING = f"{DOMAIN}_ringing"
 EVENT_STOPPED = f"{DOMAIN}_stopped"
 EVENT_REMINDER = f"{DOMAIN}_reminder"
+EVENT_SKIPPED = f"{DOMAIN}_skipped"

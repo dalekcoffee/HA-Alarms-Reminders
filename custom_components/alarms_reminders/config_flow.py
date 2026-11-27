@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 from . import sounds
 from .compat import vol
 from .const import (
+    CONF_ALWAYS_RING,
     CONF_DATE,
     CONF_ENABLED,
     CONF_LABEL,
@@ -33,6 +34,8 @@ from .const import (
     CONF_TIME,
     CONF_WAKE,
     DEFAULT_BRIGHTNESS,
+    DEFAULT_HEADS_UP_MINUTES,
+    DEFAULT_HEADS_UP_WINDOW,
     DEFAULT_KELVIN,
     DEFAULT_LIGHT_RAMP_MINUTES,
     DEFAULT_RAMP_MINUTES,
@@ -47,6 +50,10 @@ from .const import (
     OPT_BRIGHTNESS,
     OPT_DEFAULT_SATELLITE,
     OPT_DEFAULT_SOUND,
+    OPT_HEADS_UP,
+    OPT_HEADS_UP_FOLLOW_UP,
+    OPT_HEADS_UP_MINUTES,
+    OPT_HEADS_UP_WINDOW,
     OPT_KELVIN,
     OPT_LIGHT_RAMP_MINUTES,
     OPT_NOTIFY_ALARMS,
@@ -167,6 +174,10 @@ class AlarmsRemindersOptionsFlow(OptionsFlow):
                 vol.Required(OPT_BRIGHTNESS, default=options.get(OPT_BRIGHTNESS, DEFAULT_BRIGHTNESS)): _percent(),
                 vol.Required(OPT_KELVIN, default=options.get(OPT_KELVIN, DEFAULT_KELVIN)): selector.ColorTempSelector(selector.ColorTempSelectorConfig(unit="kelvin", min=2000, max=6500)),
                 vol.Required(OPT_NOTIFY_ALARMS, default=options.get(OPT_NOTIFY_ALARMS, True)): selector.BooleanSelector(),
+                vol.Required(OPT_HEADS_UP, default=options.get(OPT_HEADS_UP, True)): selector.BooleanSelector(),
+                vol.Required(OPT_HEADS_UP_MINUTES, default=options.get(OPT_HEADS_UP_MINUTES, DEFAULT_HEADS_UP_MINUTES)): _minutes(1, 30),
+                vol.Required(OPT_HEADS_UP_FOLLOW_UP, default=options.get(OPT_HEADS_UP_FOLLOW_UP, True)): selector.BooleanSelector(),
+                vol.Required(OPT_HEADS_UP_WINDOW, default=options.get(OPT_HEADS_UP_WINDOW, DEFAULT_HEADS_UP_WINDOW)): _minutes(5, 240),
                 vol.Optional(OPT_NOTIFY_TARGETS, description={"suggested_value": options.get(OPT_NOTIFY_TARGETS, [])}): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=targets, multiple=True, custom_value=True)
                 ),
@@ -375,6 +386,7 @@ class AlarmSubentryFlow(_ItemFlow):
             vol.Optional(CONF_SOUND, description={"suggested_value": item.sound if item else None}): _sound_selector(self._get_entry()),
             vol.Required(CONF_WAKE, default=item.wake if item else True): selector.BooleanSelector(),
             vol.Optional(CONF_LIGHTS, description={"suggested_value": item.lights if item else []}): selector.EntitySelector(selector.EntitySelectorConfig(domain="light", multiple=True)),
+            vol.Required(CONF_ALWAYS_RING, default=item.always_ring if item else False): selector.BooleanSelector(),
         }
 
     def _apply(self, item: Item, user_input: dict[str, Any]) -> None:
@@ -382,6 +394,7 @@ class AlarmSubentryFlow(_ItemFlow):
         item.sound = user_input.get(CONF_SOUND) or None
         item.wake = bool(user_input.get(CONF_WAKE, False))
         item.lights = list(user_input.get(CONF_LIGHTS) or [])
+        item.always_ring = bool(user_input.get(CONF_ALWAYS_RING, False))
         item.snooze = False
 
 
