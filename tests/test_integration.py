@@ -617,6 +617,13 @@ def _add_alarm(setup, hour, minute, **kwargs):
     return manager.add(item)
 
 
+def _follow_up_only(hass, setup):
+    from custom_components.alarms_reminders.const import OPT_HEADS_UP_FOLLOW_UP
+
+    entry = setup["entry"]
+    hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_HEADS_UP_FOLLOW_UP: True})
+
+
 async def _answer(hass, action):
     hass.bus.async_fire("mobile_app_notification_action", {"action": action})
     for _ in range(3):
@@ -625,6 +632,8 @@ async def _answer(hass, action):
 
 async def test_heads_up_dismiss_skips_follow_up_alarm(hass, setup, freezer):
     """After stopping an alarm, the next one within the hour asks first; Dismiss skips it."""
+    _follow_up_only(hass, setup)
+    await hass.async_block_till_done()
     manager = setup["entry"].runtime_data
     _add_alarm(setup, 22, 1)
     later = _add_alarm(setup, 22, 20)
@@ -657,6 +666,8 @@ async def test_heads_up_dismiss_skips_follow_up_alarm(hass, setup, freezer):
 
 async def test_heads_up_unanswered_rings_as_usual(hass, setup, freezer):
     """No answer: the alarm rings on time and its Stop works."""
+    _follow_up_only(hass, setup)
+    await hass.async_block_till_done()
     manager = setup["entry"].runtime_data
     _add_alarm(setup, 22, 1)
     later = _add_alarm(setup, 22, 20)
@@ -673,7 +684,9 @@ async def test_heads_up_unanswered_rings_as_usual(hass, setup, freezer):
 
 
 async def test_no_heads_up_without_a_stop_first(hass, setup, freezer):
-    """By default only follow-up alarms get a heads-up; a timed-out ring doesn't count."""
+    """With 'only after a stop' on, no heads-up until an alarm is stopped; a snooze doesn't count."""
+    _follow_up_only(hass, setup)
+    await hass.async_block_till_done()
     manager = setup["entry"].runtime_data
     _add_alarm(setup, 22, 20)
     await _at(hass, freezer, _local(22, 15, 1))
@@ -690,13 +703,8 @@ async def test_no_heads_up_without_a_stop_first(hass, setup, freezer):
 
 
 async def test_heads_up_every_alarm_and_snooze(hass, setup, freezer):
-    """With 'only after a stop' off, every alarm asks; Snooze skips today and rings 9 min after."""
-    from custom_components.alarms_reminders.const import OPT_HEADS_UP_FOLLOW_UP
-
-    entry = setup["entry"]
-    hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_HEADS_UP_FOLLOW_UP: False})
-    await hass.async_block_till_done()
-    manager = entry.runtime_data
+    """By default every alarm asks first; Snooze skips today and rings 9 min after."""
+    manager = setup["entry"].runtime_data
     sid = _add_alarm(setup, 22, 30, repeat=[0, 1, 2, 3, 4, 5, 6], on=None)
     await _at(hass, freezer, _local(22, 25, 1))
     assert len(_heads_ups(setup)) == 1
@@ -716,6 +724,8 @@ async def test_heads_up_every_alarm_and_snooze(hass, setup, freezer):
 
 async def test_heads_up_sent_at_once_when_stop_is_close(hass, setup, freezer):
     """An alarm under 5 minutes after a stop gets its heads-up straight away."""
+    _follow_up_only(hass, setup)
+    await hass.async_block_till_done()
     manager = setup["entry"].runtime_data
     _add_alarm(setup, 22, 1)
     _add_alarm(setup, 22, 4)

@@ -58,6 +58,7 @@ DEFAULT_KELVIN = 6500
 DEFAULT_SOUND = "car_alarm.wav"
 DEFAULT_HEADS_UP_MINUTES = 5
 DEFAULT_HEADS_UP_WINDOW = 60
+DEFAULT_HEADS_UP_FOLLOW_UP = False  # heads-up before every alarm
 
 # One-time alarms missed while Home Assistant was down still ring if they
 # are at most this late.

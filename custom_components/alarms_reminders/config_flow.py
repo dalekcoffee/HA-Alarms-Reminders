@@ -34,6 +34,7 @@ from .const import (
     CONF_TIME,
     CONF_WAKE,
     DEFAULT_BRIGHTNESS,
+    DEFAULT_HEADS_UP_FOLLOW_UP,
     DEFAULT_HEADS_UP_MINUTES,
     DEFAULT_HEADS_UP_WINDOW,
     DEFAULT_KELVIN,
@@ -176,7 +177,7 @@ class AlarmsRemindersOptionsFlow(OptionsFlow):
                 vol.Required(OPT_NOTIFY_ALARMS, default=options.get(OPT_NOTIFY_ALARMS, True)): selector.BooleanSelector(),
                 vol.Required(OPT_HEADS_UP, default=options.get(OPT_HEADS_UP, True)): selector.BooleanSelector(),
                 vol.Required(OPT_HEADS_UP_MINUTES, default=options.get(OPT_HEADS_UP_MINUTES, DEFAULT_HEADS_UP_MINUTES)): _minutes(1, 30),
-                vol.Required(OPT_HEADS_UP_FOLLOW_UP, default=options.get(OPT_HEADS_UP_FOLLOW_UP, True)): selector.BooleanSelector(),
+                vol.Required(OPT_HEADS_UP_FOLLOW_UP, default=options.get(OPT_HEADS_UP_FOLLOW_UP, DEFAULT_HEADS_UP_FOLLOW_UP)): selector.BooleanSelector(),
                 vol.Required(OPT_HEADS_UP_WINDOW, default=options.get(OPT_HEADS_UP_WINDOW, DEFAULT_HEADS_UP_WINDOW)): _minutes(5, 240),
                 vol.Optional(OPT_NOTIFY_TARGETS, description={"suggested_value": options.get(OPT_NOTIFY_TARGETS, [])}): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=targets, multiple=True, custom_value=True)

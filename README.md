@@ -8,7 +8,7 @@ Voice alarms and reminders for Assist voice devices (ESPHome satellites, Voice P
 - **Skip without deleting:** "Skip tomorrow's alarm".
 - **Vacation mode:** "Turn on vacation mode until Sunday" keeps every alarm quiet until midnight at the end of that day. Reminders still go off. An end date is required.
 - **Stop and snooze:** say "stop" on the device, press its action button, say the wake word, tap **Stop** on the alarm in Home Assistant, or tap **Stop** on the phone notification. "Okay Nabu, snooze" snoozes. It stops by itself after 10 minutes.
-- **Heads-up before follow-up alarms:** once you've stopped an alarm, any alarm within the next hour first sends your phones "Alarm coming up" 5 minutes early, with **Dismiss** and **Snooze**. Dismiss skips that alarm, Snooze moves it to 9 minutes after its time. No answer and it rings as usual, so you're covered if you fell back asleep.
+- **Heads-up before alarms:** every alarm first sends your phones "Alarm coming up" 5 minutes early, with **Dismiss** and **Snooze**. Dismiss skips that alarm, Snooze moves it to 9 minutes after its time. No answer and it rings as usual, so you're covered if you fell back asleep.
 - **Your own sounds:** a built-in car-alarm siren, beeps and a chime, plus any audio file you upload or link.
 
 Everything runs locally in Home Assistant. Alarms are stored by Home Assistant itself, so they survive restarts.
@@ -48,7 +48,7 @@ Open the integration and click **Configure › Settings**:
 | Send ringing alarms to phones | on | While an alarm rings, the phones get a notification with **Stop** and **Snooze**. It clears when the alarm ends. |
 | Heads-up on the phone before alarms | on | Sends "Alarm coming up" with **Dismiss** and **Snooze** before an alarm rings. No answer = it rings as usual. Snooze alarms never get one, and an alarm with **Always ring** on never does either. |
 | Heads-up how early | 5 min | |
-| Only after I've stopped an alarm | on | Only alarms soon after you stopped (or dismissed) one get a heads-up. Turn off to get one before every alarm. A snooze or an alarm that rang out doesn't count as a stop. |
+| Only after I've stopped an alarm | off | Turn on so only alarms soon after you stopped (or dismissed) one get a heads-up. A snooze or an alarm that rang out doesn't count as a stop. |
 | …for alarms within | 60 min | Counted from your last stop or dismiss, so each one starts it again. |
 
 ### Sounds
