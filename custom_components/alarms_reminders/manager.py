@@ -35,6 +35,7 @@ from homeassistant.util import dt as dt_util
 from . import sounds
 from .const import (
     DEFAULT_BRIGHTNESS,
+    DEFAULT_HEADS_UP_FOLLOW_UP,
     DEFAULT_HEADS_UP_MINUTES,
     DEFAULT_HEADS_UP_WINDOW,
     DEFAULT_KELVIN,
@@ -363,6 +364,9 @@ class AlarmManager:
     @callback
     def _on_timer(self, now: datetime) -> None:
         self._unsub_timer = None
+        # A late wake-up (a heads-up timer just before an alarm, or a busy
+        # loop) also handles whatever came due since.
+        now = max(now, dt_util.now())
         self._heads_up_catch_up(now + timedelta(seconds=1))
         due = [sid for sid, when in self.next_fires.items() if when <= now + timedelta(seconds=1)]
         fire_time = max([now, *(self.next_fires[sid] for sid in due)])
@@ -429,7 +433,7 @@ class AlarmManager:
             or not self.phone_targets()
         ):
             return False
-        if not self.opt(OPT_HEADS_UP_FOLLOW_UP, True):
+        if not self.opt(OPT_HEADS_UP_FOLLOW_UP, DEFAULT_HEADS_UP_FOLLOW_UP):
             return True
         window = timedelta(minutes=float(self.opt(OPT_HEADS_UP_WINDOW, DEFAULT_HEADS_UP_WINDOW)))
         return self.last_dismissed is not None and fire - self.last_dismissed <= window
